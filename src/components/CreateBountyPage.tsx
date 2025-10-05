@@ -9,6 +9,7 @@ import { Switch } from './ui/switch';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Alert, AlertDescription } from './ui/alert';
+import { SimpleTooltip } from './ui/SimpleTooltip';
 import { BountySuccessModal } from './BountySuccessModal';
 import { useWallet } from './WalletContext';
 import { validateWord } from '../utils/dictionary';
@@ -29,8 +30,8 @@ import {
 } from 'lucide-react';
 
 type BountyType = 'Simple' | 'Multistage' | 'Time-based' | 'Random words' | 'Limited trials';
-type PrizeDistribution = 'winner-take-all' | 'split-winners' | 'first-to-solve';
-type WinnerCriteria = 'time' | 'attempts' | 'words-correct';
+type PrizeDistribution = 'winner-take-all' | 'split-winners';
+type WinnerCriteria = 'first-to-solve' | 'time' | 'attempts' | 'words-correct';
 
 interface BountyForm {
   name: string;
@@ -65,6 +66,8 @@ export function CreateBountyPage() {
   const [wordErrors, setWordErrors] = useState<string[]>([]);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
+  const [prizeTooltipPulse, setPrizeTooltipPulse] = useState(false);
+  const [criteriaTooltipPulse, setCriteriaTooltipPulse] = useState(false);
 
   const [form, setForm] = useState<BountyForm>({
     name: '',
@@ -85,6 +88,56 @@ export function CreateBountyPage() {
 
   const updateForm = (field: keyof BountyForm, value: any) => {
     setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Get tooltip text for Prize Distribution
+  const getPrizeDistributionTooltip = () => {
+    switch (form.prizeDistribution) {
+      case 'winner-take-all':
+        return 'One winner receives the full bounty prize.';
+      case 'split-winners':
+        return 'Prize is shared evenly among all winners.';
+      default:
+        return 'Select how the prize will be distributed.';
+    }
+  };
+
+  // Get tooltip text for Winning Criteria
+  const getWinnerCriteriaTooltip = () => {
+    switch (form.winnerCriteria) {
+      case 'first-to-solve':
+        return 'The first participant to solve the bounty wins instantly.';
+      case 'time':
+        return 'Whoever completes the bounty in the shortest time wins.';
+      case 'attempts':
+        return 'Winner is the one who solves with the fewest attempts.';
+      case 'words-correct':
+        return 'Winner has the highest number of correct answers.';
+      default:
+        return 'Select how winners will be determined.';
+    }
+  };
+
+  // Handle Prize Distribution change with pulse animation
+  const handlePrizeDistributionChange = (value: PrizeDistribution) => {
+    updateForm('prizeDistribution', value);
+    console.log('Setting prize pulse to true');
+    setPrizeTooltipPulse(true);
+    setTimeout(() => {
+      console.log('Setting prize pulse to false');
+      setPrizeTooltipPulse(false);
+    }, 1000);
+  };
+
+  // Handle Winning Criteria change with pulse animation
+  const handleWinnerCriteriaChange = (value: WinnerCriteria) => {
+    updateForm('winnerCriteria', value);
+    console.log('Setting criteria pulse to true');
+    setCriteriaTooltipPulse(true);
+    setTimeout(() => {
+      console.log('Setting criteria pulse to false');
+      setCriteriaTooltipPulse(false);
+    }, 1000);
   };
 
   const validateWords = async () => {
@@ -567,7 +620,11 @@ export function CreateBountyPage() {
 
         <div>
           <Label htmlFor="duration">Duration (Hours)</Label>
-          <Select value={form.duration} onValueChange={(value) => updateForm('duration', value)}>
+          <Select
+            value={form.duration}
+            onValueChange={(value) => updateForm('duration', value)}
+            disabled={form.winnerCriteria === 'first-to-solve'}
+          >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -581,19 +638,33 @@ export function CreateBountyPage() {
               <SelectItem value="168">1 Week</SelectItem>
             </SelectContent>
           </Select>
+          {form.winnerCriteria === 'first-to-solve' && (
+            <p className="text-sm text-blue-600 mt-1 flex items-start gap-1">
+              <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+              <span>Bounty will automatically end once a participant solves it first.</span>
+            </p>
+          )}
         </div>
       </div>
 
       <div>
-        <Label>Prize Distribution</Label>
-        <Select value={form.prizeDistribution} onValueChange={(value) => updateForm('prizeDistribution', value as PrizeDistribution)}>
+        <div className="flex items-center gap-2 mb-2">
+          <Label>Prize Distribution</Label>
+          <SimpleTooltip content={getPrizeDistributionTooltip()}>
+            <Info
+              className={`h-4 w-4 text-muted-foreground cursor-help transition-transform duration-200 ${
+                prizeTooltipPulse ? 'scale-125 animate-pulse' : 'scale-100'
+              }`}
+            />
+          </SimpleTooltip>
+        </div>
+        <Select value={form.prizeDistribution} onValueChange={handlePrizeDistributionChange}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="winner-take-all">Winner Take All</SelectItem>
-            <SelectItem value="split-winners">Split Among Winners</SelectItem>
-            <SelectItem value="first-to-solve">First to Solve Wins</SelectItem>
+            <SelectItem value="winner-take-all">Winner Takes All</SelectItem>
+            <SelectItem value="split-winners">Split Payment</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -612,14 +683,24 @@ export function CreateBountyPage() {
         </div>
 
         <div>
-          <Label>Winner Criteria</Label>
-          <Select value={form.winnerCriteria} onValueChange={(value) => updateForm('winnerCriteria', value as WinnerCriteria)}>
+          <div className="flex items-center gap-2 mb-2">
+            <Label>Winning Criteria</Label>
+            <SimpleTooltip content={getWinnerCriteriaTooltip()}>
+              <Info
+                className={`h-4 w-4 text-muted-foreground cursor-help transition-transform duration-200 ${
+                  criteriaTooltipPulse ? 'scale-125 animate-pulse' : 'scale-100'
+                }`}
+              />
+            </SimpleTooltip>
+          </div>
+          <Select value={form.winnerCriteria} onValueChange={handleWinnerCriteriaChange}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="first-to-solve">First To Solve</SelectItem>
               <SelectItem value="time">Fastest Time</SelectItem>
-              <SelectItem value="attempts">Fewest Attempts</SelectItem>
+              <SelectItem value="attempts">Fewest Tries</SelectItem>
               <SelectItem value="words-correct">Most Words Correct</SelectItem>
             </SelectContent>
           </Select>
