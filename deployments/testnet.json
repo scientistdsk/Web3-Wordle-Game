@@ -1,0 +1,12 @@
+{
+  "network": "testnet",
+  "chainId": 296,
+  "contractAddress": "0x94525a3FC3681147363EE165684dc82140c1D6d6",
+  "deployerAddress": "0xEfd085217A9a57e43A2904B970237f1fdF6Ad553",
+  "deploymentTx": "0x0baf75a5a5e759d676eb81ff25e60ba04c4176bdcf8a66ab09549d718dc38050",
+  "timestamp": "2025-10-01T00:56:40.536Z",
+  "blockNumber": 25617089,
+  "owner": "0xEfd085217A9a57e43A2904B970237f1fdF6Ad553",
+  "platformFeeBps": "250",
+  "minBountyAmount": "100000000"
+}

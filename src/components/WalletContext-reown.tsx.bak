@@ -1,0 +1,237 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createAppKit } from '@reown/appkit/react';
+import { EthersAdapter } from '@reown/appkit-adapter-ethers';
+import { BrowserProvider } from 'ethers';
+
+// Hedera network configurations
+const hederaTestnet = {
+  chainId: 296,
+  name: 'Hedera Testnet',
+  currency: 'HBAR',
+  explorerUrl: 'https://hashscan.io/testnet',
+  rpcUrl: import.meta.env.VITE_HEDERA_TESTNET_RPC || 'https://testnet.hashio.io/api'
+};
+
+const hederaMainnet = {
+  chainId: 295,
+  name: 'Hedera Mainnet',
+  currency: 'HBAR',
+  explorerUrl: 'https://hashscan.io/mainnet',
+  rpcUrl: import.meta.env.VITE_HEDERA_MAINNET_RPC || 'https://mainnet.hashio.io/api'
+};
+
+// Metadata for the app
+const metadata = {
+  name: 'Web3 Wordle Bounty Game',
+  description: 'A decentralized Wordle-style game with bounty mechanics',
+  url: typeof window !== 'undefined' ? window.location.origin : 'https://localhost:5173',
+  icons: [typeof window !== 'undefined' ? `${window.location.origin}/favicon.ico` : 'https://localhost:5173/favicon.ico']
+};
+
+// Wallet context type
+interface WalletContextType {
+  isConnected: boolean;
+  walletAddress: string | null;
+  balance: string | null;
+  networkId: number | null;
+  isCorrectNetwork: boolean;
+  connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
+  switchNetwork: (chainId: number) => Promise<void>;
+  provider: BrowserProvider | null;
+}
+
+const WalletContext = createContext<WalletContextType | undefined>(undefined);
+
+// Initialize AppKit only if Reown project ID is available
+let appKit: any = null;
+
+// Initialize appKit after component mounts (client-side only)
+const initializeAppKit = () => {
+  if (appKit || typeof window === 'undefined') return;
+
+  const projectId = import.meta.env.VITE_REOWN_PROJECT_ID;
+  if (!projectId) {
+    console.warn('VITE_REOWN_PROJECT_ID not set. Wallet connection unavailable.');
+    return;
+  }
+
+  try {
+    const network = import.meta.env.VITE_HEDERA_NETWORK || 'testnet';
+    const networks = network === 'mainnet' ? [hederaMainnet] : [hederaTestnet];
+
+    const ethersAdapter = new EthersAdapter();
+
+    appKit = createAppKit({
+      adapters: [ethersAdapter],
+      networks,
+      metadata,
+      projectId,
+      features: {
+        analytics: true,
+        email: false,
+        socials: []
+      }
+    });
+  } catch (error) {
+    console.error('Failed to initialize Reown AppKit:', error);
+  }
+};
+
+export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [balance, setBalance] = useState<string | null>(null);
+  const [networkId, setNetworkId] = useState<number | null>(null);
+  const [provider, setProvider] = useState<BrowserProvider | null>(null);
+
+  const expectedNetwork = import.meta.env.VITE_HEDERA_NETWORK === 'mainnet' ? 295 : 296;
+  const isCorrectNetwork = networkId === expectedNetwork;
+
+  // Initialize AppKit on mount (client-side only)
+  useEffect(() => {
+    initializeAppKit();
+  }, []);
+
+  // Update wallet state
+  const updateWalletState = async () => {
+    if (!appKit) {
+      console.warn('Reown AppKit not initialized. Set VITE_REOWN_PROJECT_ID in .env.local');
+      return;
+    }
+
+    try {
+      const state = appKit.getState();
+      const isWalletConnected = state?.selectedNetworkId && state?.address;
+
+      if (isWalletConnected) {
+        setIsConnected(true);
+        setWalletAddress(state.address);
+        setNetworkId(state.selectedNetworkId);
+
+        // Get provider and balance
+        const walletProvider = appKit.getWalletProvider();
+        if (walletProvider) {
+          const ethersProvider = new BrowserProvider(walletProvider);
+          setProvider(ethersProvider);
+
+          // Fetch balance
+          try {
+            const balanceWei = await ethersProvider.getBalance(state.address);
+            const balanceHBAR = (Number(balanceWei) / 1e18).toFixed(4);
+            setBalance(balanceHBAR);
+          } catch (error) {
+            console.error('Error fetching balance:', error);
+            setBalance(null);
+          }
+        }
+      } else {
+        setIsConnected(false);
+        setWalletAddress(null);
+        setBalance(null);
+        setNetworkId(null);
+        setProvider(null);
+      }
+    } catch (error) {
+      console.error('Error updating wallet state:', error);
+    }
+  };
+
+  // Connect wallet
+  const connect = async () => {
+    if (!appKit) {
+      alert('Wallet connection not available. Please set VITE_REOWN_PROJECT_ID in your environment.');
+      return;
+    }
+
+    try {
+      await appKit.open({ view: 'Connect' });
+    } catch (error) {
+      console.error('Error connecting wallet:', error);
+      throw error;
+    }
+  };
+
+  // Disconnect wallet
+  const disconnect = async () => {
+    if (!appKit) return;
+
+    try {
+      await appKit.disconnect();
+      setIsConnected(false);
+      setWalletAddress(null);
+      setBalance(null);
+      setNetworkId(null);
+      setProvider(null);
+    } catch (error) {
+      console.error('Error disconnecting wallet:', error);
+      throw error;
+    }
+  };
+
+  // Switch network
+  const switchNetwork = async (chainId: number) => {
+    if (!appKit) return;
+
+    try {
+      await appKit.switchNetwork(chainId);
+    } catch (error) {
+      console.error('Error switching network:', error);
+      throw error;
+    }
+  };
+
+  // Subscribe to wallet events
+  useEffect(() => {
+    if (!appKit) return;
+
+    // Initial state update
+    updateWalletState();
+
+    // Subscribe to state changes
+    const unsubscribe = appKit.subscribeState((state: any) => {
+      updateWalletState();
+    });
+
+    // Cleanup
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Refresh balance periodically
+  useEffect(() => {
+    if (!isConnected || !walletAddress) return;
+
+    const interval = setInterval(() => {
+      updateWalletState();
+    }, 30000); // Refresh every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [isConnected, walletAddress]);
+
+  const value: WalletContextType = {
+    isConnected,
+    walletAddress,
+    balance,
+    networkId,
+    isCorrectNetwork,
+    connect,
+    disconnect,
+    switchNetwork,
+    provider
+  };
+
+  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+};
+
+// Custom hook to use wallet context
+export const useWallet = (): WalletContextType => {
+  const context = useContext(WalletContext);
+  if (context === undefined) {
+    throw new Error('useWallet must be used within a WalletProvider');
+  }
+  return context;
+};
+
+export default WalletContext;

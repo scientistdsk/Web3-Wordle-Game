@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm run test:contracts:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(pnpm run verify:testnet:*)",
+      "Bash(pnpm run:*)",
+      "Bash(timeout:*)",
+      "Bash(/dev/null)",
+      "Bash(pnpm list:*)",
+      "Bash(pnpm install:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Read(//c/Users/JTMax/Desktop/JOBS/Hackathon/Three/hedera examples/ReOwn Wallet/hedera-app/**)",
+      "Bash(mkdir:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
