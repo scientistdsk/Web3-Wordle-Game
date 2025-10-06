@@ -99,7 +99,7 @@ const participatedBounties = [
 ];
 
 export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
-  const { isConnected, walletAddress, userName, updateUserName } = useWallet();
+  const { isConnected, walletAddress, userName, updateUserName, refreshBalance } = useWallet();
   const [isEditingName, setIsEditingName] = useState(false);
   const [newUserName, setNewUserName] = useState(userName);
   const [userStats, setUserStats] = useState({
@@ -168,6 +168,11 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
 
       if (result.success) {
         alert(`Refund successful! Transaction: ${result.transactionHash}`);
+
+        // Refresh wallet balance after refund
+        console.log('💰 Refreshing balance after refund...');
+        await refreshBalance();
+
         // Refresh expired bounties list
         await fetchExpiredBounties();
       }

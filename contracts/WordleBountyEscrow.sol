@@ -168,8 +168,9 @@ contract WordleBountyEscrow {
         bytes32 providedHash = keccak256(abi.encodePacked(solution));
         require(providedHash == bounties[bountyId].solutionHash, "Invalid solution");
 
-        // Verify winner is a participant
-        require(participants[bountyId][winnerAddress], "Winner is not a participant");
+        // Note: Winner verification happens off-chain in Supabase
+        // This is a hybrid model: participants join for free off-chain,
+        // only prize distribution happens on-chain
 
         Bounty storage bounty = bounties[bountyId];
 

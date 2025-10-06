@@ -1,4 +1,4 @@
-import { BrowserProvider, Contract, ContractTransactionReceipt, keccak256, toUtf8Bytes, encodeBytes32String, JsonRpcSigner } from 'ethers';
+import { BrowserProvider, Contract, ContractTransactionReceipt, keccak256, toUtf8Bytes, encodeBytes32String, JsonRpcSigner, zeroPadValue, toBeHex } from 'ethers';
 
 // Contract ABI - matches WordleBountyEscrow.sol
 const ESCROW_ABI = [
@@ -84,6 +84,24 @@ export interface TransactionResult {
 }
 
 /**
+ * Convert UUID string to bytes32 format for smart contract
+ * UUIDs are too long for encodeBytes32String (36 chars > 31 limit)
+ * So we hash them to get a consistent bytes32 value
+ */
+function uuidToBytes32(uuid: string): string {
+  // Remove hyphens and convert to lowercase
+  const cleanUuid = uuid.replace(/-/g, '').toLowerCase();
+
+  // If it's already a valid hex string (32 bytes = 64 hex chars), pad it
+  if (cleanUuid.length === 32) {
+    return zeroPadValue('0x' + cleanUuid, 32);
+  }
+
+  // Otherwise, hash the UUID to get a deterministic bytes32 value
+  return keccak256(toUtf8Bytes(uuid));
+}
+
+/**
  * EscrowService - TypeScript service for interacting with WordleBountyEscrow smart contract
  */
 export class EscrowService {
@@ -142,7 +160,7 @@ export class EscrowService {
     const solutionHash = keccak256(toUtf8Bytes(solution));
 
     // Convert bountyId to bytes32
-    const bountyIdBytes32 = encodeBytes32String(bountyId);
+    const bountyIdBytes32 = uuidToBytes32(bountyId);
 
     // Calculate deadline (current time + duration in seconds)
     const deadline = Math.floor(Date.now() / 1000) + (durationHours * 3600);
@@ -168,7 +186,7 @@ export class EscrowService {
   async joinBounty(bountyId: string): Promise<TransactionResult> {
     try {
       const contract = this.ensureInitialized();
-      const bountyIdBytes32 = encodeBytes32String(bountyId);
+      const bountyIdBytes32 = uuidToBytes32(bountyId);
 
       const tx = await contract.joinBounty(bountyIdBytes32);
       const receipt = await tx.wait();
@@ -193,7 +211,7 @@ export class EscrowService {
   async completeBounty(params: CompleteBountyParams): Promise<TransactionResult> {
     try {
       const contract = this.ensureInitialized();
-      const bountyIdBytes32 = encodeBytes32String(params.bountyId);
+      const bountyIdBytes32 = uuidToBytes32(params.bountyId);
 
       const tx = await contract.completeBounty(
         bountyIdBytes32,
@@ -222,7 +240,7 @@ export class EscrowService {
   async cancelBounty(bountyId: string): Promise<TransactionResult> {
     try {
       const contract = this.ensureInitialized();
-      const bountyIdBytes32 = encodeBytes32String(bountyId);
+      const bountyIdBytes32 = uuidToBytes32(bountyId);
 
       const tx = await contract.cancelBounty(bountyIdBytes32);
       const receipt = await tx.wait();
@@ -247,7 +265,7 @@ export class EscrowService {
   async claimRefund(bountyId: string): Promise<TransactionResult> {
     try {
       const contract = this.ensureInitialized();
-      const bountyIdBytes32 = encodeBytes32String(bountyId);
+      const bountyIdBytes32 = uuidToBytes32(bountyId);
 
       const tx = await contract.claimExpiredBountyRefund(bountyIdBytes32);
       const receipt = await tx.wait();
@@ -272,7 +290,7 @@ export class EscrowService {
   async getBountyInfo(bountyId: string): Promise<BountyInfo | null> {
     try {
       const contract = this.ensureInitialized();
-      const bountyIdBytes32 = encodeBytes32String(bountyId);
+      const bountyIdBytes32 = uuidToBytes32(bountyId);
 
       const bounty = await contract.getBounty(bountyIdBytes32);
 
@@ -301,7 +319,7 @@ export class EscrowService {
   async isParticipant(bountyId: string, address: string): Promise<boolean> {
     try {
       const contract = this.ensureInitialized();
-      const bountyIdBytes32 = encodeBytes32String(bountyId);
+      const bountyIdBytes32 = uuidToBytes32(bountyId);
 
       return await contract.isParticipant(bountyIdBytes32, address);
     } catch (error: any) {
@@ -316,7 +334,7 @@ export class EscrowService {
   async getBountyParticipants(bountyId: string): Promise<string[]> {
     try {
       const contract = this.ensureInitialized();
-      const bountyIdBytes32 = encodeBytes32String(bountyId);
+      const bountyIdBytes32 = uuidToBytes32(bountyId);
 
       return await contract.getBountyParticipants(bountyIdBytes32);
     } catch (error: any) {

@@ -72,6 +72,9 @@ export function BountyCard({ bounty, viewMode, isUserBounty = false, onJoinSucce
         setCheckingParticipation(true);
         console.log('🔍 Checking existing participation for:', { bountyId: bounty.id, walletAddress });
 
+        // First ensure user exists in database
+        await api.getOrCreateUser(walletAddress);
+
         const participations = await api.getUserParticipations(walletAddress);
         const existingParticipation = participations.find(p => p.bounty_id === bounty.id);
 

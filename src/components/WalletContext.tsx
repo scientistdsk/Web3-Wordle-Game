@@ -13,6 +13,7 @@ interface WalletContextType {
   switchNetwork: (chainId: number) => Promise<void>;
   provider: BrowserProvider | null;
   getEthersSigner: () => Promise<JsonRpcSigner>;
+  refreshBalance: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -62,9 +63,11 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           setBalance(balanceHBAR);
         } catch (error) {
           console.error('Error fetching balance:', error);
-          setBalance(null);
+          // Don't update balance on error, keep previous value
         }
-      } else {
+      } else if (!isConnected) {
+        // Only set disconnected if we weren't previously connected
+        // This prevents false disconnections during wallet provider delays
         setIsConnected(false);
         setWalletAddress(null);
         setBalance(null);
@@ -73,6 +76,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     } catch (error) {
       console.error('Error updating wallet state:', error);
+      // Don't disconnect on update errors - wallet might still be connected
+      // Just log the error and keep previous state
     }
   };
 
@@ -89,6 +94,16 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     try {
       console.log('Requesting accounts...');
+
+      // First check if already connected
+      const existingAccounts = await window.ethereum.request({ method: 'eth_accounts' });
+
+      if (existingAccounts && existingAccounts.length > 0) {
+        console.log('Wallet already connected, updating state...');
+        await updateWalletState();
+        console.log('Wallet connected successfully!');
+        return;
+      }
 
       // Add timeout to detect hanging requests
       const timeoutPromise = new Promise((_, reject) => {
@@ -112,6 +127,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         alert('Wallet connection rejected');
       } else if (error.code === -32002) {
         alert('Wallet connection request already pending. Please check your wallet extension.');
+      } else if (error.code === -32603) {
+        // This error often means wallet is connected but app state is out of sync
+        console.log('Attempting to update wallet state...');
+        await updateWalletState();
       } else {
         alert('Failed to connect wallet: ' + error.message);
       }
@@ -260,6 +279,12 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
+  // Expose refresh balance as a public method
+  const refreshBalance = async () => {
+    console.log('🔄 Manually refreshing balance...');
+    await updateWalletState();
+  };
+
   const value: WalletContextType = {
     isConnected,
     walletAddress,
@@ -270,7 +295,8 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     disconnect,
     switchNetwork,
     provider,
-    getEthersSigner
+    getEthersSigner,
+    refreshBalance
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

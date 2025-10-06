@@ -58,7 +58,7 @@ interface CreatedBountyData {
 }
 
 export function CreateBountyPage() {
-  const { isConnected, walletAddress, getEthersSigner } = useWallet();
+  const { isConnected, walletAddress, getEthersSigner, refreshBalance } = useWallet();
   const [currentStep, setCurrentStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -66,8 +66,6 @@ export function CreateBountyPage() {
   const [wordErrors, setWordErrors] = useState<string[]>([]);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
-  const [prizeTooltipPulse, setPrizeTooltipPulse] = useState(false);
-  const [criteriaTooltipPulse, setCriteriaTooltipPulse] = useState(false);
 
   const [form, setForm] = useState<BountyForm>({
     name: '',
@@ -118,27 +116,6 @@ export function CreateBountyPage() {
     }
   };
 
-  // Handle Prize Distribution change with pulse animation
-  const handlePrizeDistributionChange = (value: PrizeDistribution) => {
-    updateForm('prizeDistribution', value);
-    console.log('Setting prize pulse to true');
-    setPrizeTooltipPulse(true);
-    setTimeout(() => {
-      console.log('Setting prize pulse to false');
-      setPrizeTooltipPulse(false);
-    }, 1000);
-  };
-
-  // Handle Winning Criteria change with pulse animation
-  const handleWinnerCriteriaChange = (value: WinnerCriteria) => {
-    updateForm('winnerCriteria', value);
-    console.log('Setting criteria pulse to true');
-    setCriteriaTooltipPulse(true);
-    setTimeout(() => {
-      console.log('Setting criteria pulse to false');
-      setCriteriaTooltipPulse(false);
-    }, 1000);
-  };
 
   const validateWords = async () => {
     // Skip validation for Random words type
@@ -235,17 +212,42 @@ export function CreateBountyPage() {
         const escrowService = new EscrowService();
         await escrowService.initialize(signer);
 
-        // Generate a temporary bounty ID for the contract
-        const tempBountyId = `BNTY${Date.now().toString(36).toUpperCase()}`;
+        // FIRST: Create bounty in database to get UUID
+        console.log('📝 Creating bounty in database first to get UUID...');
+        const bountyData = {
+          creator_id: walletAddress,
+          name: form.name,
+          description: form.description,
+          bounty_type: form.type,
+          words: finalWords,
+          hints: form.hints.filter(h => h.trim()),
+          prize_amount: parseFloat(form.prizeAmount) || 0,
+          prize_distribution: form.prizeDistribution,
+          prize_currency: 'HBAR',
+          max_participants: form.maxParticipants ? parseInt(form.maxParticipants) : null,
+          max_attempts_per_user: form.maxAttempts ? parseInt(form.maxAttempts) : null,
+          time_limit_seconds: form.timeLimitSeconds ? parseInt(form.timeLimitSeconds) : null,
+          winner_criteria: form.winnerCriteria,
+          duration_hours: parseInt(form.duration),
+          status: 'active',
+          is_public: form.isPublic,
+          requires_registration: form.requiresRegistration
+        };
+
+        createdBountyData = await createBounty(bountyData);
+        const bountyUUID = createdBountyData.id;
+        console.log('✅ Bounty created in database with UUID:', bountyUUID);
+
+        // NOW: Use the UUID for the smart contract
         const solutionWord = finalWords[0];
 
-        console.log('📤 Sending transaction to smart contract...');
+        console.log('📤 Sending transaction to smart contract with UUID:', bountyUUID);
         const tx = await escrowService.createBounty(
-          tempBountyId,
+          bountyUUID,  // Use the database UUID instead of temp ID
           solutionWord,
           prizeAmount,
           parseInt(form.duration),
-          '' // Will update with database ID later
+          bountyUUID // Store UUID in metadata too
         );
 
         console.log('⏳ Transaction sent:', tx.hash, '- Waiting for confirmation...');
@@ -263,34 +265,14 @@ export function CreateBountyPage() {
 
         console.log('✅ Transaction confirmed:', transactionHash);
         setPaymentStatus('success');
+
+        // Refresh wallet balance after transaction
+        console.log('💰 Refreshing balance after bounty creation...');
+        await refreshBalance();
       }
 
-      // STEP 2: Only create database record AFTER payment succeeds (or if free bounty)
-      console.log('💾 Creating bounty in database...');
-
-      const bountyData = {
-        creator_id: walletAddress,
-        name: form.name,
-        description: form.description || null,
-        bounty_type: form.type,
-        prize_amount: prizeAmount,
-        prize_currency: 'HBAR',
-        words: finalWords,
-        hints: form.hints.filter(hint => hint.trim()),
-        max_participants: form.maxParticipants ? parseInt(form.maxParticipants) : null,
-        max_attempts_per_user: form.maxAttempts ? parseInt(form.maxAttempts) : null,
-        time_limit_seconds: form.timeLimitSeconds ? parseInt(form.timeLimitSeconds) : null,
-        winner_criteria: form.winnerCriteria,
-        duration_hours: parseInt(form.duration),
-        status: 'active',
-        is_public: form.isPublic,
-        requires_registration: form.requiresRegistration
-      };
-
-      createdBountyData = await createBounty(bountyData);
-      console.log('✅ Bounty created in database:', createdBountyData.id);
-
-      // STEP 3: Update database with transaction info if payment was made
+      // STEP 2: Update database with transaction info if payment was made
+      // (Bounty was already created before the smart contract call to get the UUID)
       if (transactionHash && contractAddress) {
         console.log('📝 Updating bounty with transaction info...');
         await updateBountyTransactionInfo(
@@ -652,13 +634,11 @@ export function CreateBountyPage() {
           <Label>Prize Distribution</Label>
           <SimpleTooltip content={getPrizeDistributionTooltip()}>
             <Info
-              className={`h-4 w-4 text-muted-foreground cursor-help transition-transform duration-200 ${
-                prizeTooltipPulse ? 'scale-125 animate-pulse' : 'scale-100'
-              }`}
+              className="h-4 w-4 text-muted-foreground cursor-help animate-pulse"
             />
           </SimpleTooltip>
         </div>
-        <Select value={form.prizeDistribution} onValueChange={handlePrizeDistributionChange}>
+        <Select value={form.prizeDistribution} onValueChange={(value) => updateForm('prizeDistribution', value)}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
@@ -687,13 +667,11 @@ export function CreateBountyPage() {
             <Label>Winning Criteria</Label>
             <SimpleTooltip content={getWinnerCriteriaTooltip()}>
               <Info
-                className={`h-4 w-4 text-muted-foreground cursor-help transition-transform duration-200 ${
-                  criteriaTooltipPulse ? 'scale-125 animate-pulse' : 'scale-100'
-                }`}
+                className="h-4 w-4 text-muted-foreground cursor-help animate-pulse"
               />
             </SimpleTooltip>
           </div>
-          <Select value={form.winnerCriteria} onValueChange={handleWinnerCriteriaChange}>
+          <Select value={form.winnerCriteria} onValueChange={(value) => updateForm('winnerCriteria', value)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>

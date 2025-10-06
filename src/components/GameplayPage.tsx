@@ -8,7 +8,6 @@ import { validateWord } from '../utils/dictionary';
 import { useBounty, useSubmitAttempt } from '../utils/supabase/hooks';
 import { validateWordInDictionary, incrementWordUsage } from '../utils/supabase/api';
 import { useWallet } from './WalletContext';
-import { useCompleteBounty } from '../utils/payment/payment-hooks';
 import {
   Info,
   Trophy,
@@ -47,7 +46,6 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
   const { walletAddress, isConnected } = useWallet();
   const { data: bountyData, loading: bountyLoading, error: bountyError } = useBounty(bountyId || '', walletAddress || undefined);
   const { submitAttempt, loading: isSubmitting } = useSubmitAttempt();
-  const { completeBounty, loading: isCompletingBounty } = useCompleteBounty();
 
   // Initialize word index based on participation data or start at 0
   const initialWordIndex = bountyData?.participation?.current_word_index || 0;
@@ -142,6 +140,13 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
 
     try {
       // Submit attempt to database
+      console.log('📝 Submitting attempt to database:', {
+        bountyId,
+        walletAddress,
+        wordIndex: gameState.currentWordIndex,
+        guess: gameState.currentGuess,
+        timeElapsed
+      });
       const result = await submitAttempt(
         bountyId,
         walletAddress,
@@ -149,6 +154,7 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
         gameState.currentGuess,
         timeElapsed
       );
+      console.log('✅ Attempt submitted successfully:', result);
 
       const newGuesses = [...gameState.guesses];
       newGuesses[gameState.currentRow] = gameState.currentGuess;
@@ -183,9 +189,9 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
       }
 
       if (result.completed_bounty) {
-        // Bounty completed! Process prize distribution
+        // Player completed the bounty! Show success modal
+        // Note: Admin will manually complete bounty and distribute prize
         setIsWinner(true);
-        await handleBountyCompletion();
         setShowCompletionModal(true);
       } else if (isLoss) {
         // Game over but bounty not completed
@@ -222,25 +228,6 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleBountyCompletion = async () => {
-    if (!bountyId || !walletAddress) return;
-
-    try {
-      console.log('Processing bounty completion and prize distribution...');
-      const result = await completeBounty(bountyId, walletAddress);
-
-      if (result.success) {
-        console.log('Prize distributed successfully:', result.transactionHash);
-        // You could show a success toast here
-      } else {
-        console.error('Prize distribution failed:', result.error);
-        // Show error toast or modal
-      }
-    } catch (error) {
-      console.error('Error during bounty completion:', error);
-    }
   };
 
   const resetGame = () => {

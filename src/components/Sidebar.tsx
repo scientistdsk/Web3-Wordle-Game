@@ -11,7 +11,8 @@ import {
   Moon,
   Sun,
   X,
-  TestTube
+  TestTube,
+  Shield
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,6 +29,7 @@ const navigationItems = [
   { id: 'create-bounty' as NavigationPage, label: 'Create Advanced Wordle', icon: Plus },
   { id: 'leaderboard' as NavigationPage, label: 'Leaderboard', icon: Trophy },
   { id: 'profile' as NavigationPage, label: 'Profile', icon: User },
+  { id: 'admin' as NavigationPage, label: 'Admin Dashboard', icon: Shield },
   { id: 'payment-test' as NavigationPage, label: 'Payment Testing', icon: TestTube },
 ];
 

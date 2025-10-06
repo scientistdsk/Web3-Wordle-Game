@@ -9,10 +9,11 @@ import { CreateBountyPage } from './components/CreateBountyPage';
 import { LeaderboardPage } from './components/LeaderboardPage';
 import { RandomWordPage } from './components/RandomWordPage';
 import { PaymentTestPage } from './components/PaymentTestPage';
+import { AdminPage } from './components/AdminPage';
 import { WalletProvider } from './components/WalletContext';
 import { Button } from './components/ui/button';
 
-export type NavigationPage = 'bounty-hunt' | 'profile' | 'gameplay' | 'create-bounty' | 'leaderboard' | 'random-word' | 'payment-test';
+export type NavigationPage = 'bounty-hunt' | 'profile' | 'gameplay' | 'create-bounty' | 'leaderboard' | 'random-word' | 'payment-test' | 'admin';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<NavigationPage>('bounty-hunt');
@@ -52,6 +53,8 @@ export default function App() {
         return <RandomWordPage />;
       case 'payment-test':
         return <PaymentTestPage />;
+      case 'admin':
+        return <AdminPage />;
       default:
         return <BountyHuntPage onNavigateToGameplay={handleNavigateToGameplay} />;
     }

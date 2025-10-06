@@ -10,5 +10,17 @@
     "owner": "0xEfd085217A9a57e43A2904B970237f1fdF6Ad553",
     "platformFeeBps": "250",
     "minBountyAmount": "100000000"
+  },
+  {
+    "network": "testnet",
+    "chainId": 296,
+    "contractAddress": "0xACcFf00601B24c65200f9162268fc56ac203c0dC",
+    "deployerAddress": "0xEfd085217A9a57e43A2904B970237f1fdF6Ad553",
+    "deploymentTx": "0x56df0334d10f0161bb9a73b5e691cee73e587a79e627cdf72fc8e33616f65983",
+    "timestamp": "2025-10-05T22:43:46.628Z",
+    "blockNumber": 25829095,
+    "owner": "0xEfd085217A9a57e43A2904B970237f1fdF6Ad553",
+    "platformFeeBps": "250",
+    "minBountyAmount": "100000000"
   }
 ]
