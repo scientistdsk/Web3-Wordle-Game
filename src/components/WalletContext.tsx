@@ -282,7 +282,54 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Expose refresh balance as a public method
   const refreshBalance = async () => {
     console.log('🔄 Manually refreshing balance...');
-    await updateWalletState();
+
+    if (!window.ethereum || !walletAddress) {
+      console.warn('Cannot refresh: no provider or wallet address');
+      return;
+    }
+
+    try {
+      const oldBalance = balance;
+      console.log('📊 Current balance:', oldBalance, 'HBAR');
+
+      // Wait for blockchain to finalize (Hedera can take 2-3 seconds)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Retry up to 3 times with fresh provider each time
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          console.log(`🔄 Attempt ${attempt}/3 to fetch new balance...`);
+
+          // Create fresh provider to avoid caching
+          const freshProvider = new BrowserProvider(window.ethereum);
+          const balanceWei = await freshProvider.getBalance(walletAddress);
+          const balanceHBAR = (Number(balanceWei) / 1e18).toFixed(4);
+
+          console.log('💰 Fetched balance:', balanceHBAR, 'HBAR');
+
+          // Check if balance actually changed
+          if (balanceHBAR !== oldBalance) {
+            console.log('✅ Balance updated:', oldBalance, '→', balanceHBAR, 'HBAR');
+            setBalance(balanceHBAR);
+            return;
+          } else {
+            console.log('⚠️ Balance unchanged, retrying in 1s...');
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        } catch (err) {
+          console.error(`Error on attempt ${attempt}:`, err);
+          if (attempt === 3) throw err;
+        }
+      }
+
+      console.warn('⚠️ Balance did not change after 3 attempts');
+    } catch (error) {
+      console.error('Error refreshing balance:', error);
+      // Fallback to full state update
+      await updateWalletState();
+    }
   };
 
   const value: WalletContextType = {
