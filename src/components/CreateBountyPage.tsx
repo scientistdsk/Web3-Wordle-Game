@@ -15,6 +15,7 @@ import { useWallet } from './WalletContext';
 import { validateWord } from '../utils/dictionary';
 import { createBounty, validateWordInDictionary, updateBountyTransactionInfo, getRandomWords } from '../utils/supabase/api';
 import { EscrowService } from '../contracts/EscrowService';
+import { TransactionStatus } from './TransactionStatus';
 import {
   Target,
   Trophy,
@@ -242,6 +243,10 @@ export function CreateBountyPage() {
         const solutionWord = finalWords[0];
 
         console.log('📤 Sending transaction to smart contract with UUID:', bountyUUID);
+
+        // Show pending toast
+        const toastId = TransactionStatus.pending('Creating bounty on blockchain...');
+
         const tx = await escrowService.createBounty(
           bountyUUID,  // Use the database UUID instead of temp ID
           solutionWord,
@@ -265,6 +270,14 @@ export function CreateBountyPage() {
 
         console.log('✅ Transaction confirmed:', transactionHash);
         setPaymentStatus('success');
+
+        // Dismiss pending toast and show success
+        TransactionStatus.dismiss(toastId);
+        TransactionStatus.success(
+          transactionHash,
+          `Bounty created successfully! Prize: ${prizeAmount} HBAR`,
+          import.meta.env.VITE_HEDERA_NETWORK as 'testnet' | 'mainnet'
+        );
 
         // Refresh wallet balance after transaction
         console.log('💰 Refreshing balance after bounty creation...');
@@ -333,6 +346,12 @@ export function CreateBountyPage() {
       }
 
       setPaymentError(errorMessage);
+
+      // Show error toast with retry option
+      TransactionStatus.error(errorMessage, () => {
+        // Retry by calling handleCreateBounty again
+        handleCreateBounty();
+      });
 
       // Alert user with clear message
       alert(`❌ Bounty Creation Failed\n\n${errorMessage}\n\n${

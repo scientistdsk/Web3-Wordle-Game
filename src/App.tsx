@@ -14,6 +14,7 @@ import { WalletProvider } from './components/WalletContext';
 import { Button } from './components/ui/button';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { NetworkWarningBanner } from './components/NetworkWarningBanner';
+import { Toaster } from 'sonner';
 
 export type NavigationPage = 'bounty-hunt' | 'profile' | 'gameplay' | 'create-bounty' | 'leaderboard' | 'random-word' | 'payment-test' | 'admin';
 
@@ -163,6 +164,9 @@ export default function App() {
             }}
           />
         )}
+
+        {/* Toast Notifications */}
+        <Toaster position="top-right" expand={false} richColors closeButton />
       </div>
     </WalletProvider>
   );

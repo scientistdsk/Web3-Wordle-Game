@@ -6,6 +6,7 @@ import { BountyWithCreator } from '../utils/supabase/api';
 import { escrowService } from '../contracts/EscrowService';
 import { useWallet } from './WalletContext';
 import { supabase } from '../utils/supabase/client';
+import { TransactionStatus } from './TransactionStatus';
 
 interface CompleteBountyModalProps {
   isOpen: boolean;
@@ -120,6 +121,9 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
       // Get the solution (first word from bounty)
       const solution = bounty.words[0] || 'unknown';
 
+      // Show pending toast
+      const toastId = TransactionStatus.pending('Distributing prize to winner...');
+
       // Complete bounty on smart contract (hybrid model: no on-chain registration needed)
       console.log('📤 Completing bounty on smart contract...');
       const result = await escrowService.completeBounty({
@@ -129,8 +133,17 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
       });
 
       if (!result.success) {
+        TransactionStatus.dismiss(toastId);
         throw new Error(result.error || 'Transaction failed');
       }
+
+      // Dismiss pending and show success
+      TransactionStatus.dismiss(toastId);
+      TransactionStatus.success(
+        result.transactionHash || '',
+        `Prize distributed to ${winner.display_name || winner.username}!`,
+        import.meta.env.VITE_HEDERA_NETWORK as 'testnet' | 'mainnet'
+      );
 
       // Update Supabase
       // 1. Mark bounty as completed
@@ -179,7 +192,11 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
       }, 2000);
     } catch (err: any) {
       console.error('Error completing bounty:', err);
-      setError(err.message || 'Failed to complete bounty');
+      const errorMessage = err.message || 'Failed to complete bounty';
+      setError(errorMessage);
+
+      // Show error toast
+      TransactionStatus.error(errorMessage);
     } finally {
       setIsCompleting(false);
     }

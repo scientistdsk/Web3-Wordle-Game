@@ -27,6 +27,9 @@ import {
 } from 'lucide-react';
 import { useRefundBounty } from '../utils/payment/payment-hooks';
 import { getBounties } from '../utils/supabase/api';
+import { CancelBountyModal } from './CancelBountyModal';
+import { escrowService } from '../contracts/EscrowService';
+import { TransactionStatus } from './TransactionStatus';
 
 interface ProfilePageProps {
   onCreateBounty: () => void;
@@ -114,6 +117,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
   const [expiredBounties, setExpiredBounties] = useState<any[]>([]);
   const [refundingBountyId, setRefundingBountyId] = useState<string | null>(null);
   const { refundBounty, loading: refundLoading, error: refundError } = useRefundBounty();
+  const [cancellingBounty, setCancellingBounty] = useState<any | null>(null);
 
   useEffect(() => {
     if (isConnected && walletAddress) {
@@ -186,6 +190,46 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
       alert(`Refund failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setRefundingBountyId(null);
+    }
+  };
+
+  const handleCancelBounty = async () => {
+    if (!cancellingBounty || !walletAddress) return;
+
+    try {
+      const toastId = TransactionStatus.pending('Cancelling bounty...');
+
+      // Initialize escrow service
+      const { getEthersSigner } = useWallet();
+      const signer = await getEthersSigner();
+      await escrowService.initialize(signer);
+
+      // Cancel bounty on smart contract
+      const result = await escrowService.cancelBounty(cancellingBounty.id);
+
+      if (!result.success) {
+        TransactionStatus.dismiss(toastId);
+        throw new Error(result.error || 'Cancellation failed');
+      }
+
+      TransactionStatus.dismiss(toastId);
+      TransactionStatus.success(
+        result.transactionHash || '',
+        'Bounty cancelled successfully!',
+        import.meta.env.VITE_HEDERA_NETWORK as 'testnet' | 'mainnet'
+      );
+
+      // Refresh wallet balance
+      await refreshBalance();
+
+      // Close modal
+      setCancellingBounty(null);
+
+      // Refresh bounty list (if you have a function for this)
+      // await fetchCreatedBounties();
+    } catch (error) {
+      console.error('Cancel bounty failed:', error);
+      TransactionStatus.error(error instanceof Error ? error.message : 'Failed to cancel bounty');
     }
   };
 
@@ -317,14 +361,31 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
                         </span>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right space-y-2">
                       <div className="font-semibold">{bounty.prize}</div>
+                      {bounty.hunters === 0 && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => setCancellingBounty(bounty)}
+                        >
+                          Cancel Bounty
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
               </Card>
             ))}
           </div>
+
+          {/* Cancel Bounty Modal */}
+          <CancelBountyModal
+            isOpen={!!cancellingBounty}
+            onClose={() => setCancellingBounty(null)}
+            bounty={cancellingBounty as any}
+            onConfirm={handleCancelBounty}
+          />
         </TabsContent>
 
         <TabsContent value="hunts" className="space-y-4">
