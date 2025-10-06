@@ -23,83 +23,79 @@ import {
   Check,
   X,
   RefreshCw,
-  DollarSign
+  DollarSign,
+  ExternalLink,
+  Copy
 } from 'lucide-react';
 import { useRefundBounty } from '../utils/payment/payment-hooks';
-import { getBounties } from '../utils/supabase/api';
+import { getBounties, getUserParticipations, BountyWithCreator } from '../utils/supabase/api';
 import { CancelBountyModal } from './CancelBountyModal';
 import { escrowService } from '../contracts/EscrowService';
 import { TransactionStatus } from './TransactionStatus';
+import { supabase } from '../utils/supabase/client';
+import { getTransactionUrl, getCurrentNetwork, truncateHash, copyToClipboard } from '../utils/hashscan';
 
 interface ProfilePageProps {
   onCreateBounty: () => void;
 }
 
-// Mock user data
-const userData = {
-  name: 'WordMaster',
-  rank: 'Expert Hunter',
-  stats: {
-    totalBountyCreated: 12,
-    totalBountyEntered: 34,
-    totalTries: 156,
-    totalWins: 28,
-    totalLosses: 6,
-    successRate: 82.4
-  },
-  walletBalance: '450.75 HBAR'
-};
+// Transaction Item Component
+function TransactionItem({ tx }: { tx: any }) {
+  const [copied, setCopied] = useState(false);
+  const isIncoming = tx.transaction_type === 'prize_payout' || tx.transaction_type === 'refund';
+  const amount = parseFloat(tx.amount);
 
-const createdBounties = [
-  {
-    id: '1',
-    name: 'Daily Word Challenge',
-    prize: '50 HBAR',
-    hunters: 24,
-    type: 'Simple'
-  },
-  {
-    id: '2',
-    name: 'Speed Master',
-    prize: '100 HBAR',
-    hunters: 15,
-    type: 'Time-based'
-  },
-  {
-    id: '3',
-    name: 'Triple Threat',
-    prize: '200 HBAR',
-    hunters: 8,
-    type: 'Multistage'
-  }
-];
+  const handleCopyHash = async () => {
+    const success = await copyToClipboard(tx.transaction_hash);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
-const participatedBounties = [
-  {
-    id: '1',
-    name: 'Morning Challenge',
-    type: 'Simple',
-    prize: '25 HBAR',
-    status: 'Ended',
-    result: 'Accomplished'
-  },
-  {
-    id: '2',
-    name: 'Speed Test',
-    type: 'Time-based',
-    prize: '75 HBAR',
-    status: 'Ongoing',
-    result: 'Pending'
-  },
-  {
-    id: '3',
-    name: 'Word Expert',
-    type: 'Multistage',
-    prize: '150 HBAR',
-    status: 'Ended',
-    result: 'Failed'
-  }
-];
+  return (
+    <div key={tx.id} className="flex flex-col gap-2 p-3 bg-muted/50 rounded-lg">
+      <div className="flex justify-between items-start">
+        <div className="flex-1">
+          <span className="text-sm font-medium">
+            {tx.transaction_type === 'prize_payout' && 'Bounty Win'}
+            {tx.transaction_type === 'deposit' && 'Created Bounty'}
+            {tx.transaction_type === 'refund' && 'Refund'}
+          </span>
+          {tx.bounty?.name && (
+            <span className="text-sm text-muted-foreground"> - "{tx.bounty.name}"</span>
+          )}
+        </div>
+        <span className={`text-sm font-medium ${isIncoming ? 'text-green-600' : 'text-red-600'}`}>
+          {isIncoming ? '+' : '-'}{amount.toFixed(2)} {tx.currency}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <code className="bg-muted px-2 py-0.5 rounded">
+          {truncateHash(tx.transaction_hash, 8, 6)}
+        </code>
+        <button
+          onClick={handleCopyHash}
+          className="hover:text-foreground transition-colors"
+          title={copied ? 'Copied!' : 'Copy hash'}
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        </button>
+        <a
+          href={getTransactionUrl(tx.transaction_hash, getCurrentNetwork())}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 hover:text-foreground transition-colors"
+          title="View on HashScan"
+        >
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// No more mock data - we'll fetch real data from Supabase
 
 export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
   const { isConnected, walletAddress, balance, refreshBalance } = useWallet();
@@ -114,15 +110,23 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
     totalLosses: 0,
     successRate: 0
   });
+  const [userRank, setUserRank] = useState<string>('Beginner');
+  const [createdBounties, setCreatedBounties] = useState<BountyWithCreator[]>([]);
+  const [participatedBounties, setParticipatedBounties] = useState<any[]>([]);
   const [expiredBounties, setExpiredBounties] = useState<any[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
   const [refundingBountyId, setRefundingBountyId] = useState<string | null>(null);
   const { refundBounty, loading: refundLoading, error: refundError } = useRefundBounty();
   const [cancellingBounty, setCancellingBounty] = useState<any | null>(null);
+  const [isLoadingBounties, setIsLoadingBounties] = useState(true);
 
   useEffect(() => {
     if (isConnected && walletAddress) {
       fetchUserData();
+      fetchCreatedBounties();
+      fetchParticipatedBounties();
       fetchExpiredBounties();
+      fetchRecentTransactions();
     }
   }, [isConnected, walletAddress]);
 
@@ -141,8 +145,72 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
         setUserName(data.user.name);
         setNewUserName(data.user.name);
       }
+      if (data.user?.rank) {
+        setUserRank(data.user.rank);
+      }
     } catch (error) {
       console.error('Error fetching user data:', error);
+    }
+  };
+
+  const fetchCreatedBounties = async () => {
+    if (!walletAddress) return;
+
+    try {
+      setIsLoadingBounties(true);
+
+      // Get user ID first
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('wallet_address', walletAddress)
+        .single();
+
+      if (userError || !userData) {
+        console.error('User not found:', userError);
+        setCreatedBounties([]);
+        return;
+      }
+
+      // Fetch bounties created by this user
+      const { data, error } = await supabase
+        .from('bounties')
+        .select(`
+          *,
+          creator:users!creator_id (
+            id,
+            wallet_address,
+            username,
+            display_name
+          )
+        `)
+        .eq('creator_id', userData.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching created bounties:', error);
+        setCreatedBounties([]);
+        return;
+      }
+
+      setCreatedBounties(data || []);
+    } catch (error) {
+      console.error('Error in fetchCreatedBounties:', error);
+      setCreatedBounties([]);
+    } finally {
+      setIsLoadingBounties(false);
+    }
+  };
+
+  const fetchParticipatedBounties = async () => {
+    if (!walletAddress) return;
+
+    try {
+      const participations = await getUserParticipations(walletAddress);
+      setParticipatedBounties(participations || []);
+    } catch (error) {
+      console.error('Error fetching participated bounties:', error);
+      setParticipatedBounties([]);
     }
   };
 
@@ -165,6 +233,43 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
       setExpiredBounties(userExpiredBounties);
     } catch (error) {
       console.error('Error fetching expired bounties:', error);
+    }
+  };
+
+  const fetchRecentTransactions = async () => {
+    if (!walletAddress) return;
+
+    try {
+      // Get user ID first
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('wallet_address', walletAddress)
+        .single();
+
+      if (userError || !userData) return;
+
+      // Fetch recent transactions for this user
+      const { data, error } = await supabase
+        .from('payment_transactions')
+        .select(`
+          *,
+          bounty:bounties (
+            name
+          )
+        `)
+        .eq('user_id', userData.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) {
+        console.error('Error fetching transactions:', error);
+        return;
+      }
+
+      setRecentTransactions(data || []);
+    } catch (error) {
+      console.error('Error in fetchRecentTransactions:', error);
     }
   };
 
@@ -225,8 +330,9 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
       // Close modal
       setCancellingBounty(null);
 
-      // Refresh bounty list (if you have a function for this)
-      // await fetchCreatedBounties();
+      // Refresh bounty lists
+      await fetchCreatedBounties();
+      await fetchExpiredBounties();
     } catch (error) {
       console.error('Cancel bounty failed:', error);
       TransactionStatus.error(error instanceof Error ? error.message : 'Failed to cancel bounty');
@@ -346,38 +452,54 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
             </Button>
           </div>
 
-          <div className="space-y-3">
-            {createdBounties.map((bounty) => (
-              <Card key={bounty.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <h4 className="font-medium">{bounty.name}</h4>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">{bounty.type}</Badge>
-                        <span className="text-sm text-muted-foreground flex items-center gap-1">
-                          <Users className="h-3 w-3" />
-                          {bounty.hunters} hunters
-                        </span>
+          {isLoadingBounties ? (
+            <div className="flex items-center justify-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : createdBounties.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>You haven't created any bounties yet.</p>
+              <Button onClick={onCreateBounty} variant="outline" className="mt-4">
+                Create Your First Bounty
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {createdBounties.map((bounty) => (
+                <Card key={bounty.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <h4 className="font-medium">{bounty.name}</h4>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{bounty.bounty_type}</Badge>
+                          <Badge variant={bounty.status === 'active' ? 'default' : 'secondary'}>
+                            {bounty.status}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            {bounty.participant_count || 0} participants
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right space-y-2">
+                        <div className="font-semibold">{bounty.prize_amount} {bounty.prize_currency}</div>
+                        {bounty.status === 'active' && (!bounty.participant_count || bounty.participant_count === 0) && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => setCancellingBounty(bounty)}
+                          >
+                            Cancel Bounty
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className="text-right space-y-2">
-                      <div className="font-semibold">{bounty.prize}</div>
-                      {bounty.hunters === 0 && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => setCancellingBounty(bounty)}
-                        >
-                          Cancel Bounty
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
           {/* Cancel Bounty Modal */}
           <CancelBountyModal
@@ -397,53 +519,69 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
             </Button>
           </div>
 
-          <div className="space-y-3">
-            {participatedBounties.map((bounty) => (
-              <Card key={bounty.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <h4 className="font-medium">{bounty.name}</h4>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">{bounty.type}</Badge>
-                        <Badge variant={bounty.status === 'Ended' ? 'secondary' : 'default'}>
-                          {bounty.status === 'Ended' ? (
-                            <>
-                              <Clock className="h-3 w-3 mr-1" />
-                              Ended
-                            </>
-                          ) : (
-                            'Ongoing'
+          {participatedBounties.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>You haven't joined any bounties yet.</p>
+              <p className="text-sm mt-2">Visit the Bounty Hunt to find and join exciting challenges!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {participatedBounties.map((participation: any) => {
+                const bounty = participation.bounty;
+                const isWinner = participation.is_winner;
+                const isCompleted = participation.status === 'completed';
+
+                return (
+                  <Card key={participation.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <h4 className="font-medium">{bounty.name}</h4>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">{bounty.bounty_type}</Badge>
+                            <Badge variant={bounty.status === 'completed' ? 'secondary' : 'default'}>
+                              {bounty.status === 'completed' ? (
+                                <>
+                                  <Clock className="h-3 w-3 mr-1" />
+                                  Ended
+                                </>
+                              ) : (
+                                'Ongoing'
+                              )}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Attempts: {participation.total_attempts} | Words: {participation.words_completed}
+                          </div>
+                        </div>
+                        <div className="text-right space-y-1">
+                          <div className="font-semibold">{bounty.prize_amount} {bounty.prize_currency}</div>
+                          {isCompleted && (
+                            <Badge
+                              variant={isWinner ? 'default' : 'secondary'}
+                              className="text-xs"
+                            >
+                              {isWinner ? (
+                                <>
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Won
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Completed
+                                </>
+                              )}
+                            </Badge>
                           )}
-                        </Badge>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right space-y-1">
-                      <div className="font-semibold">{bounty.prize}</div>
-                      {bounty.status === 'Ended' && (
-                        <Badge 
-                          variant={bounty.result === 'Accomplished' ? 'default' : 'destructive'}
-                          className="text-xs"
-                        >
-                          {bounty.result === 'Accomplished' ? (
-                            <>
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Accomplished
-                            </>
-                          ) : (
-                            <>
-                              <XCircle className="h-3 w-3 mr-1" />
-                              Failed
-                            </>
-                          )}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="refunds" className="space-y-4">
@@ -545,7 +683,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{userData.stats.totalBountyCreated}</div>
+                <div className="text-2xl font-bold">{userStats.totalBountyCreated}</div>
               </CardContent>
             </Card>
 
@@ -556,7 +694,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{userData.stats.totalBountyEntered}</div>
+                <div className="text-2xl font-bold">{userStats.totalBountyEntered}</div>
               </CardContent>
             </Card>
 
@@ -567,7 +705,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{userData.stats.totalTries}</div>
+                <div className="text-2xl font-bold">{userStats.totalTries}</div>
               </CardContent>
             </Card>
 
@@ -578,7 +716,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-green-600">{userData.stats.totalWins}</div>
+                <div className="text-2xl font-bold text-green-600">{userStats.totalWins}</div>
               </CardContent>
             </Card>
 
@@ -589,7 +727,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-red-600">{userData.stats.totalLosses}</div>
+                <div className="text-2xl font-bold text-red-600">{userStats.totalLosses}</div>
               </CardContent>
             </Card>
 
@@ -601,7 +739,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold flex items-center gap-1">
-                  {userData.stats.successRate}%
+                  {userStats.successRate}%
                   <TrendingUp className="h-5 w-5 text-green-500" />
                 </div>
               </CardContent>
@@ -613,7 +751,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
               <Trophy className="h-12 w-12 mx-auto mb-2 text-primary" />
               <h4 className="font-medium mb-1">Current Rank</h4>
               <Badge variant="secondary" className="text-lg px-4 py-2">
-                {userData.rank}
+                {userRank}
               </Badge>
             </CardContent>
           </Card>
@@ -627,7 +765,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
               <div className="flex items-center justify-center">
                 <div className="text-center space-y-2">
                   <Wallet className="h-16 w-16 mx-auto text-primary" />
-                  <div className="text-3xl font-bold">{userData.walletBalance}</div>
+                  <div className="text-3xl font-bold">{balance || '0'} HBAR</div>
                   <p className="text-muted-foreground">Available Balance</p>
                 </div>
               </div>
@@ -648,18 +786,15 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
               <CardTitle className="text-sm">Recent Transactions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Bounty Win - "Daily Challenge"</span>
-                <span className="text-sm font-medium text-green-600">+50 HBAR</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Created Bounty - "Speed Master"</span>
-                <span className="text-sm font-medium text-red-600">-100 HBAR</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm">Bounty Win - "Word Expert"</span>
-                <span className="text-sm font-medium text-green-600">+200 HBAR</span>
-              </div>
+              {recentTransactions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No transactions yet
+                </p>
+              ) : (
+                recentTransactions.map((tx: any) => (
+                  <TransactionItem key={tx.id} tx={tx} />
+                ))
+              )}
             </CardContent>
           </Card>
         </TabsContent>
