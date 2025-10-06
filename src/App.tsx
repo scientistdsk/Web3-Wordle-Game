@@ -12,6 +12,8 @@ import { PaymentTestPage } from './components/PaymentTestPage';
 import { AdminPage } from './components/AdminPage';
 import { WalletProvider } from './components/WalletContext';
 import { Button } from './components/ui/button';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { NetworkWarningBanner } from './components/NetworkWarningBanner';
 
 export type NavigationPage = 'bounty-hunt' | 'profile' | 'gameplay' | 'create-bounty' | 'leaderboard' | 'random-word' | 'payment-test' | 'admin';
 
@@ -40,23 +42,59 @@ export default function App() {
   const renderPage = () => {
     switch (currentPage) {
       case 'bounty-hunt':
-        return <BountyHuntPage onNavigateToGameplay={handleNavigateToGameplay} />;
+        return (
+          <ErrorBoundary>
+            <BountyHuntPage onNavigateToGameplay={handleNavigateToGameplay} />
+          </ErrorBoundary>
+        );
       case 'profile':
-        return <ProfilePage onCreateBounty={() => setCurrentPage('create-bounty')} />;
+        return (
+          <ErrorBoundary>
+            <ProfilePage onCreateBounty={() => setCurrentPage('create-bounty')} />
+          </ErrorBoundary>
+        );
       case 'gameplay':
-        return <GameplayPage bountyId={currentBountyId} onBackToBountyHunt={handleBackToBountyHunt} />;
+        return (
+          <ErrorBoundary>
+            <GameplayPage bountyId={currentBountyId} onBackToBountyHunt={handleBackToBountyHunt} />
+          </ErrorBoundary>
+        );
       case 'create-bounty':
-        return <CreateBountyPage />;
+        return (
+          <ErrorBoundary>
+            <CreateBountyPage />
+          </ErrorBoundary>
+        );
       case 'leaderboard':
-        return <LeaderboardPage />;
+        return (
+          <ErrorBoundary>
+            <LeaderboardPage />
+          </ErrorBoundary>
+        );
       case 'random-word':
-        return <RandomWordPage />;
+        return (
+          <ErrorBoundary>
+            <RandomWordPage />
+          </ErrorBoundary>
+        );
       case 'payment-test':
-        return <PaymentTestPage />;
+        return (
+          <ErrorBoundary>
+            <PaymentTestPage />
+          </ErrorBoundary>
+        );
       case 'admin':
-        return <AdminPage />;
+        return (
+          <ErrorBoundary>
+            <AdminPage />
+          </ErrorBoundary>
+        );
       default:
-        return <BountyHuntPage onNavigateToGameplay={handleNavigateToGameplay} />;
+        return (
+          <ErrorBoundary>
+            <BountyHuntPage onNavigateToGameplay={handleNavigateToGameplay} />
+          </ErrorBoundary>
+        );
     }
   };
 
@@ -102,6 +140,11 @@ export default function App() {
 
           {/* Page Content */}
           <main className="flex-1 p-4 lg:p-6">
+            {/* Network Warning Banner */}
+            <div className="mb-4">
+              <NetworkWarningBanner />
+            </div>
+
             {renderPage()}
           </main>
         </div>
