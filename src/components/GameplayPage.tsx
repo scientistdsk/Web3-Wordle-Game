@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -75,6 +75,23 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
   const [wordErrorMessage, setWordErrorMessage] = useState('');
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [isWinner, setIsWinner] = useState(false);
+
+  // Ref for the active row to scroll into view on mobile
+  const activeRowRef = useRef<HTMLDivElement>(null);
+  const gameContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll active row into view when it changes (for mobile keyboard)
+  useEffect(() => {
+    if (activeRowRef.current && gameState.gameStatus === 'playing') {
+      // Use a timeout to ensure the row is rendered before scrolling
+      setTimeout(() => {
+        activeRowRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }, 100);
+    }
+  }, [gameState.currentRow, gameState.currentGuess]);
 
   // Timer for elapsed time and time-based bounties
   useEffect(() => {
@@ -411,15 +428,15 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
           )}
 
           {/* Wordle Grid */}
-          <div className="flex justify-center">
-            <div 
+          <div className="flex justify-center overflow-y-auto" ref={gameContainerRef}>
+            <div
               className={`
-                grid grid-rows-6 gap-1 sm:gap-2 w-full px-2
-                ${WORD_LENGTH <= 5 ? 'max-w-xs' : 
-                  WORD_LENGTH <= 7 ? 'max-w-md' : 
+                grid grid-rows-6 gap-1 sm:gap-2 w-full px-2 pb-4
+                ${WORD_LENGTH <= 5 ? 'max-w-xs' :
+                  WORD_LENGTH <= 7 ? 'max-w-md' :
                   WORD_LENGTH <= 9 ? 'max-w-lg' : 'max-w-xl'}
               `}
-              style={{ 
+              style={{
                 gridTemplateColumns: `repeat(${WORD_LENGTH}, 1fr)`
               }}
             >
@@ -437,9 +454,10 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
                     return (
                       <div
                         key={colIndex}
+                        ref={rowIndex === gameState.currentRow && colIndex === 0 ? activeRowRef : null}
                         className={`
                           aspect-square border-2 flex items-center justify-center font-bold
-                          ${WORD_LENGTH <= 6 ? 'text-sm sm:text-lg' : 
+                          ${WORD_LENGTH <= 6 ? 'text-sm sm:text-lg' :
                             WORD_LENGTH <= 8 ? 'text-xs sm:text-base' : 'text-xs'}
                           ${letterState === 'correct' ? 'bg-green-500 text-white border-green-500' :
                             letterState === 'present' ? 'bg-yellow-500 text-white border-yellow-500' :
@@ -458,21 +476,23 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
           </div>
 
           {/* Virtual Keyboard */}
-          <div className="space-y-2">
+          <div className="space-y-1.5 sm:space-y-2 pb-4 sm:pb-0">
             {[
               ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
               ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
               ['ENTER', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', 'BACKSPACE']
             ].map((row, rowIndex) => (
-              <div key={rowIndex} className="flex justify-center gap-1">
+              <div key={rowIndex} className="flex justify-center gap-1 sm:gap-1.5">
                 {row.map((key) => (
                   <Button
                     key={key}
                     variant="outline"
                     size="sm"
                     className={`
-                      ${key === 'ENTER' || key === 'BACKSPACE' ? 'px-3' : 'w-8 h-8 p-0'}
-                      text-xs
+                      ${key === 'ENTER' || key === 'BACKSPACE'
+                        ? 'min-w-[60px] h-11 px-2 sm:px-3 text-[10px] sm:text-xs'
+                        : 'min-w-[32px] min-h-[44px] w-8 sm:w-10 h-11 p-0 text-xs sm:text-sm'}
+                      font-semibold touch-manipulation
                     `}
                     onClick={() => handleKeyPress(key)}
                     disabled={gameState.gameStatus !== 'playing'}
