@@ -1,43 +1,47 @@
 import { toast } from 'sonner';
 import { ExternalLink, CheckCircle2, XCircle, Loader2, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
-
-const HASHSCAN_BASE_URL = import.meta.env.VITE_HEDERA_NETWORK === 'mainnet'
-  ? 'https://hashscan.io/mainnet'
-  : 'https://hashscan.io/testnet';
+import { getTransactionUrl, getCurrentNetwork, truncateHash, copyToClipboard, formatNetworkName } from '../utils/hashscan';
+import { Badge } from './ui/badge';
 
 interface TransactionToastProps {
   hash: string;
   network?: 'testnet' | 'mainnet';
 }
 
-function TransactionSuccessContent({ hash, network = 'testnet' }: TransactionToastProps) {
+function TransactionSuccessContent({ hash, network }: TransactionToastProps) {
   const [copied, setCopied] = useState(false);
+  const currentNetwork = network || getCurrentNetwork();
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(hash);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const success = await copyToClipboard(hash);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
-  const hashScanUrl = `${network === 'mainnet' ? 'https://hashscan.io/mainnet' : 'https://hashscan.io/testnet'}/transaction/${hash}`;
+  const hashScanUrl = getTransactionUrl(hash, currentNetwork);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <CheckCircle2 className="h-4 w-4 text-green-500" />
         <span className="font-semibold">Transaction Confirmed</span>
+        <Badge variant="secondary" className="text-xs">
+          {formatNetworkName(currentNetwork)}
+        </Badge>
       </div>
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <code className="text-xs bg-muted px-2 py-1 rounded">
-          {hash.slice(0, 10)}...{hash.slice(-8)}
+          {truncateHash(hash, 10, 8)}
         </code>
         <button
           onClick={handleCopy}
           className="hover:text-foreground transition-colors"
-          title="Copy transaction hash"
+          title={copied ? 'Copied!' : 'Copy transaction hash'}
         >
-          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
         </button>
       </div>
       <a
