@@ -99,7 +99,8 @@ const participatedBounties = [
 ];
 
 export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
-  const { isConnected, walletAddress, userName, updateUserName, refreshBalance } = useWallet();
+  const { isConnected, walletAddress, balance, refreshBalance } = useWallet();
+  const [userName, setUserName] = useState<string>('Anonymous');
   const [isEditingName, setIsEditingName] = useState(false);
   const [newUserName, setNewUserName] = useState(userName);
   const [userStats, setUserStats] = useState({
@@ -131,6 +132,10 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
       const data = await response.json();
       if (data.user?.stats) {
         setUserStats(data.user.stats);
+      }
+      if (data.user?.name) {
+        setUserName(data.user.name);
+        setNewUserName(data.user.name);
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -202,7 +207,7 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
       });
 
       if (response.ok) {
-        updateUserName(newUserName);
+        setUserName(newUserName);
         setIsEditingName(false);
       }
     } catch (error) {
@@ -270,10 +275,10 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
             Bounty Hunter
           </Badge>
         </div>
-      </div>
+      </div> 
 
       <Tabs defaultValue="created" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="flex w-full">
           <TabsTrigger value="created">Created Bounty</TabsTrigger>
           <TabsTrigger value="hunts">My Hunts</TabsTrigger>
           <TabsTrigger value="refunds" className="inline-flex items-center justify-center">
