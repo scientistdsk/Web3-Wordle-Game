@@ -137,7 +137,7 @@ export function BountyCompletionModal({
               <Share className="h-4 w-4" />
               Share
             </Button>
-            {isWinner && bountyData.prize_amount > 0 && bountyData.id && (
+            {/* {isWinner && bountyData.prize_amount > 0 && bountyData.id && (
               <Button
                 onClick={() => setShowPrizeModal(true)}
                 className="flex-1 gap-2 bg-yellow-600 hover:bg-yellow-700"
@@ -145,7 +145,7 @@ export function BountyCompletionModal({
                 <Gift className="h-4 w-4" />
                 Claim Prize
               </Button>
-            )}
+            )} */}
             <Button onClick={onBackToBountyHunt} className="flex-1 gap-2">
               <ArrowLeft className="h-4 w-4" />
               Back to Hunt
