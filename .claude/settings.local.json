@@ -16,7 +16,8 @@
       "Bash(findstr:*)",
       "Bash(taskkill:*)",
       "Read(//c/Users/JTMax/Desktop/JOBS/Hackathon/Three/hedera examples/ReOwn Wallet/hedera-app/**)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []
