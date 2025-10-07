@@ -42,7 +42,9 @@ interface ProfilePageProps {
 // Transaction Item Component
 function TransactionItem({ tx }: { tx: any }) {
   const [copied, setCopied] = useState(false);
-  const isIncoming = tx.transaction_type === 'prize_payout' || tx.transaction_type === 'refund';
+  // Income: prize_payment (winning a bounty) or refund
+  // Expenditure: deposit (creating a bounty)
+  const isIncoming = tx.transaction_type === 'prize_payment' || tx.transaction_type === 'refund';
   const amount = parseFloat(tx.amount);
 
   const handleCopyHash = async () => {
@@ -58,7 +60,7 @@ function TransactionItem({ tx }: { tx: any }) {
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <span className="text-sm font-medium">
-            {tx.transaction_type === 'prize_payout' && 'Bounty Win'}
+            {tx.transaction_type === 'prize_payment' && 'Bounty Win'}
             {tx.transaction_type === 'deposit' && 'Created Bounty'}
             {tx.transaction_type === 'refund' && 'Refund'}
           </span>
@@ -132,21 +134,47 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
 
   const fetchUserData = async () => {
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-d72b2276/users/${walletAddress}`, {
-        headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
+      // Fetch user profile info
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('username, display_name')
+        .eq('wallet_address', walletAddress)
+        .single();
+
+      if (userData) {
+        const displayName = userData.display_name || userData.username || 'Anonymous';
+        setUserName(displayName);
+        setNewUserName(displayName);
+      }
+
+      // Fetch user stats using the database function
+      const { data: statsData, error: statsError } = await supabase.rpc('get_user_stats', {
+        wallet_addr: walletAddress
       });
-      const data = await response.json();
-      if (data.user?.stats) {
-        setUserStats(data.user.stats);
-      }
-      if (data.user?.name) {
-        setUserName(data.user.name);
-        setNewUserName(data.user.name);
-      }
-      if (data.user?.rank) {
-        setUserRank(data.user.rank);
+
+      if (statsError) {
+        console.error('Error fetching user stats:', statsError);
+      } else if (statsData && statsData.length > 0) {
+        const stats = statsData[0];
+        setUserStats({
+          totalBountyCreated: stats.total_bounty_created || 0,
+          totalBountyEntered: stats.total_bounty_entered || 0,
+          totalTries: stats.total_tries || 0,
+          totalWins: stats.total_wins || 0,
+          totalLosses: stats.total_losses || 0,
+          successRate: parseFloat(stats.success_rate) || 0
+        });
+
+        // Calculate rank based on wins
+        if (stats.total_wins >= 10) {
+          setUserRank('Master');
+        } else if (stats.total_wins >= 5) {
+          setUserRank('Expert');
+        } else if (stats.total_wins >= 1) {
+          setUserRank('Intermediate');
+        } else {
+          setUserRank('Beginner');
+        }
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -343,22 +371,19 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
     if (!isConnected || !walletAddress) return;
 
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-d72b2276/users/${walletAddress}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`,
-        },
-        body: JSON.stringify({
-          address: walletAddress,
-          name: newUserName,
-          stats: userStats
-        }),
-      });
+      const { error } = await supabase
+        .from('users')
+        .update({
+          display_name: newUserName,
+          updated_at: new Date().toISOString()
+        })
+        .eq('wallet_address', walletAddress);
 
-      if (response.ok) {
+      if (!error) {
         setUserName(newUserName);
         setIsEditingName(false);
+      } else {
+        console.error('Error updating user name:', error);
       }
     } catch (error) {
       console.error('Error updating user name:', error);
@@ -529,18 +554,19 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
               {participatedBounties.map((participation: any) => {
                 const bounty = participation.bounty;
                 const isWinner = participation.is_winner;
-                const isCompleted = participation.status === 'completed';
+                const isCompleted = bounty.status === 'completed';
+                const isLoss = isCompleted && !isWinner;
 
                 return (
                   <Card key={participation.id}>
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
-                        <div className="space-y-1">
+                        <div className="space-y-1 flex-1">
                           <h4 className="font-medium">{bounty.name}</h4>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant="outline">{bounty.bounty_type}</Badge>
-                            <Badge variant={bounty.status === 'completed' ? 'secondary' : 'default'}>
-                              {bounty.status === 'completed' ? (
+                            <Badge variant={isCompleted ? 'secondary' : 'default'}>
+                              {isCompleted ? (
                                 <>
                                   <Clock className="h-3 w-3 mr-1" />
                                   Ended
@@ -549,6 +575,19 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
                                 'Ongoing'
                               )}
                             </Badge>
+                            {/* Win/Loss Badge */}
+                            {isWinner && (
+                              <Badge variant="default" className="bg-green-600 hover:bg-green-700 text-white">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Won
+                              </Badge>
+                            )}
+                            {isLoss && (
+                              <Badge variant="secondary" className="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-100">
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Lost
+                              </Badge>
+                            )}
                           </div>
                           <div className="text-xs text-muted-foreground">
                             Attempts: {participation.total_attempts} | Words: {participation.words_completed}
@@ -556,24 +595,6 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
                         </div>
                         <div className="text-right space-y-1">
                           <div className="font-semibold">{bounty.prize_amount} {bounty.prize_currency}</div>
-                          {isCompleted && (
-                            <Badge
-                              variant={isWinner ? 'default' : 'secondary'}
-                              className="text-xs"
-                            >
-                              {isWinner ? (
-                                <>
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Won
-                                </>
-                              ) : (
-                                <>
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Completed
-                                </>
-                              )}
-                            </Badge>
-                          )}
                         </div>
                       </div>
                     </CardContent>

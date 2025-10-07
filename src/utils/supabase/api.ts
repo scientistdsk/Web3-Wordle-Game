@@ -402,7 +402,7 @@ export async function completeBounty(
         user_id: winner.id,
         amount: bounty?.prize_amount || 0,
         currency: 'HBAR',
-        type: 'prize_payout',
+        transaction_type: 'prize_payment',
         status: 'completed',
         transaction_hash: transactionHash,
         created_at: new Date().toISOString()
