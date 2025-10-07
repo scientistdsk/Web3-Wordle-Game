@@ -18,7 +18,9 @@
       "Read(//c/Users/JTMax/Desktop/JOBS/Hackathon/Three/hedera examples/ReOwn Wallet/hedera-app/**)",
       "Bash(mkdir:*)",
       "Bash(dir:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm test:*)"
     ],
     "deny": [],
     "ask": []
