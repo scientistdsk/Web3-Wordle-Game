@@ -25,6 +25,7 @@ import { TransactionHistory } from './TransactionHistory';
 import { BountyHistory } from './BountyHistory';
 import { EditProfileModal } from './EditProfileModal';
 import { StatsCard } from './StatsCard';
+import { NotificationService } from '../utils/notifications/notification-service';
 
 interface ProfilePageProps {
   onCreateBounty: () => void;
@@ -176,7 +177,10 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
       const result = await refundBounty(bountyId);
 
       if (result.success) {
-        alert(`Refund successful! Transaction: ${result.transactionHash}`);
+        NotificationService.transaction.success(
+          result.transactionHash || '',
+          `Refund successful!`
+        );
 
         // Refresh wallet balance after refund
         console.log('💰 Refreshing balance after refund...');
@@ -187,7 +191,9 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
       }
     } catch (error) {
       console.error('Refund failed:', error);
-      alert(`Refund failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      NotificationService.system.error(
+        error instanceof Error ? error.message : 'Refund failed'
+      );
     } finally {
       setRefundingBountyId(null);
     }

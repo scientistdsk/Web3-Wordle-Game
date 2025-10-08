@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 import { useWallet } from './WalletContext';
 import { useJoinBounty } from '../utils/supabase/hooks';
 import * as api from '../utils/supabase/api';
+import { NotificationService } from '../utils/notifications/notification-service';
 import { 
   Target, 
   Trophy, 
@@ -119,7 +120,7 @@ export function BountyCard({ bounty, viewMode, isUserBounty = false, onJoinSucce
     console.log('🔍 handleJoinBounty called:', { bountyId: bounty.id, walletAddress, isConnected });
 
     if (!isConnected || !walletAddress) {
-      alert('Please connect your wallet first');
+      NotificationService.system.walletNotConnected();
       return;
     }
 
@@ -137,16 +138,18 @@ export function BountyCard({ bounty, viewMode, isUserBounty = false, onJoinSucce
       console.log('✅ onJoinSuccess callback called');
 
       // Show success message
-      alert('Successfully joined the bounty! You can now play.');
+      NotificationService.bounty.joined(bounty.name);
     } catch (error) {
       console.error('❌ Failed to join bounty:', error);
-      alert(error instanceof Error ? error.message : 'Failed to join bounty');
+      NotificationService.system.error(
+        error instanceof Error ? error.message : 'Failed to join bounty'
+      );
     }
   };
 
   const handlePlayBounty = () => {
     if (!isConnected) {
-      alert('Please connect your wallet first');
+      NotificationService.system.walletNotConnected();
       return;
     }
     onPlayBounty?.(bounty.id);

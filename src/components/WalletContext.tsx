@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { BrowserProvider, JsonRpcSigner } from 'ethers';
+import { NotificationService } from '../utils/notifications/notification-service';
 
 // Wallet context type
 interface WalletContextType {
@@ -88,7 +89,10 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     console.log('window.ethereum object:', window.ethereum);
 
     if (!window.ethereum) {
-      alert('Please install a Hedera-compatible wallet (HashPack, Blade, MetaMask, etc.)');
+      NotificationService.system.warning(
+        'Please install a Hedera-compatible wallet (HashPack, Blade, MetaMask, etc.)',
+        { duration: 6000 }
+      );
       return;
     }
 
@@ -122,17 +126,26 @@ export const WalletProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       console.error('Error connecting wallet:', error);
 
       if (error.message?.includes('timeout')) {
-        alert('Wallet connection timed out. Please:\n1. Check if your wallet extension is enabled\n2. Try refreshing the page\n3. Check if wallet is locked/needs to be unlocked');
+        NotificationService.system.warning(
+          'Wallet connection timed out',
+          {
+            description: 'Check if your wallet extension is enabled and try again',
+            duration: 8000
+          }
+        );
       } else if (error.code === 4001) {
-        alert('Wallet connection rejected');
+        NotificationService.system.info('Wallet connection rejected');
       } else if (error.code === -32002) {
-        alert('Wallet connection request already pending. Please check your wallet extension.');
+        NotificationService.system.warning(
+          'Connection request already pending',
+          { description: 'Please check your wallet extension', duration: 6000 }
+        );
       } else if (error.code === -32603) {
         // This error often means wallet is connected but app state is out of sync
         console.log('Attempting to update wallet state...');
         await updateWalletState();
       } else {
-        alert('Failed to connect wallet: ' + error.message);
+        NotificationService.system.error('Failed to connect wallet: ' + error.message);
       }
     }
   };

@@ -7,6 +7,7 @@ import { Label } from './ui/label';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { validateWord } from '../utils/dictionary';
+import { NotificationService } from '../utils/notifications/notification-service';
 import { 
   Shuffle, 
   Play, 
@@ -205,8 +206,8 @@ export function RandomWordPage() {
     if (unrevealedPositions.length > 0) {
       const randomPos = unrevealedPositions[Math.floor(Math.random() * unrevealedPositions.length)];
       const hintLetter = gameState.secretWord[randomPos];
-      alert(`Hint: Position ${randomPos + 1} is "${hintLetter}"`);
-      
+      NotificationService.game.hint(`Position ${randomPos + 1} is "${hintLetter}"`);
+
       setGameState(prev => ({
         ...prev,
         hintsUsed: prev.hintsUsed + 1

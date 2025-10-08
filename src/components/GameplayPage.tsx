@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from './ui/dialog';
 import { BountyCompletionModal } from './BountyCompletionModal';
+import { NotificationService } from '../utils/notifications/notification-service';
 
 type LetterState = 'correct' | 'present' | 'absent' | 'empty';
 
@@ -148,6 +149,7 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
         setWordErrorMessage('Not a valid English word');
         setShowWordError(true);
         setTimeout(() => setShowWordError(false), 3000);
+        NotificationService.game.invalidWord(gameState.currentGuess);
         return;
       }
 
@@ -185,6 +187,10 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
 
       if (isWin && isMultistage && hasMoreWords) {
         // Word solved, move to next word in multistage bounty
+        NotificationService.game.correctGuess(
+          gameState.currentGuess,
+          gameState.currentWordIndex + 1
+        );
         setGameState({
           guesses: Array(MAX_GUESSES).fill(''),
           currentGuess: '',
@@ -208,10 +214,17 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
       if (result.completed_bounty) {
         // Player completed the bounty! Show success modal
         // Note: Admin will manually complete bounty and distribute prize
+        const prizeAmount = parseFloat(bountyData?.prize_amount || '0');
+        NotificationService.game.win({
+          wordLength: currentWord.length,
+          attempts: gameState.currentRow + 1,
+          prize: prizeAmount
+        });
         setIsWinner(true);
         setShowCompletionModal(true);
       } else if (isLoss) {
         // Game over but bounty not completed
+        NotificationService.game.loss(currentWord, gameState.currentRow + 1);
         setIsWinner(false);
         setShowCompletionModal(true);
       }

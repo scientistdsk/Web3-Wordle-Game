@@ -16,6 +16,7 @@ import { validateWord } from '../utils/dictionary';
 import { createBounty, validateWordInDictionary, updateBountyTransactionInfo, getRandomWords } from '../utils/supabase/api';
 import { EscrowService } from '../contracts/EscrowService';
 import { TransactionStatus } from './TransactionStatus';
+import { NotificationService } from '../utils/notifications/notification-service';
 import {
   Target,
   Trophy,
@@ -155,14 +156,14 @@ export function CreateBountyPage() {
 
   const handleCreateBounty = async () => {
     if (!isConnected || !walletAddress) {
-      alert('Please connect your wallet first');
+      NotificationService.system.walletNotConnected();
       return;
     }
 
     // Validate words
     const isValid = await validateWords();
     if (!isValid) {
-      alert('Please fix the word errors before creating the bounty');
+      NotificationService.system.error('Please fix the word errors before creating the bounty');
       return;
     }
 
@@ -297,6 +298,13 @@ export function CreateBountyPage() {
       }
 
       setPaymentStatus('success');
+
+      // Show bounty created notification with confetti
+      NotificationService.bounty.created({
+        bountyName: form.name,
+        prizeAmount: parseFloat(form.prizeAmount) || 0
+      });
+
       setCreatedBounty({
         name: form.name,
         type: form.type,
@@ -353,12 +361,13 @@ export function CreateBountyPage() {
         handleCreateBounty();
       });
 
-      // Alert user with clear message
-      alert(`❌ Bounty Creation Failed\n\n${errorMessage}\n\n${
-        transactionHash
-          ? '⚠️ Payment was processed but database creation failed. Please contact support with this transaction hash: ' + transactionHash
-          : '✅ No payment was made. You can safely try again.'
-      }`);
+      // Show detailed error notification
+      NotificationService.system.error(errorMessage, {
+        description: transactionHash
+          ? `⚠️ Payment was processed but database creation failed. Transaction: ${transactionHash.slice(0, 10)}...`
+          : '✅ No payment was made. You can safely try again.',
+        duration: 8000
+      });
     } finally {
       setIsCreating(false);
     }

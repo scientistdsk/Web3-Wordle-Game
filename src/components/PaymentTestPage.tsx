@@ -9,6 +9,7 @@ import { Separator } from './ui/separator';
 import { useWallet } from './WalletContext';
 import { useCreateBountyWithPayment, useCompleteBounty, useVerifyTransaction } from '../utils/payment/payment-hooks';
 import { PaymentService } from '../utils/payment/payment-service';
+import { NotificationService } from '../utils/notifications/notification-service';
 import {
   TestTube,
   Play,
@@ -55,7 +56,7 @@ export function PaymentTestPage() {
 
   const runFullWorkflowTest = async () => {
     if (!isConnected || !walletAddress || !sendHBAR) {
-      alert('Please connect your wallet first');
+      NotificationService.system.walletNotConnected();
       return;
     }
 

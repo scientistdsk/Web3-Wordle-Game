@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
 import { PrizeClaimModal } from './PrizeClaimModal';
 import { Trophy, Share, ArrowLeft, Copy, Gift } from 'lucide-react';
+import { NotificationService } from '../utils/notifications/notification-service';
 
 interface BountyCompletionModalProps {
   open: boolean;
@@ -51,7 +52,7 @@ export function BountyCompletionModal({
       navigator.share({ text: shareText });
     } else {
       navigator.clipboard.writeText(shareText);
-      alert('Result copied to clipboard!');
+      NotificationService.system.copied('Result');
     }
   };
 
