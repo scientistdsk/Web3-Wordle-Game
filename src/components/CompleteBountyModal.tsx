@@ -25,6 +25,16 @@ interface Participant {
   words_completed: number;
   total_time_seconds: number;
   joined_at: string;
+  status: string;
+}
+
+// ============================================================================
+// PHASE 4 INTEGRATION: Winner data from complete_bounty_with_winners()
+// ============================================================================
+interface Winner {
+  winner_user_id: string;
+  prize_awarded: number;
+  winner_rank: number;
 }
 
 export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: CompleteBountyModalProps) {
@@ -35,6 +45,7 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
   const [isCompleting, setIsCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [completionStep, setCompletionStep] = useState<string>(''); // Track progress
 
   // Fetch participants when modal opens
   useEffect(() => {
@@ -51,6 +62,7 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
           .select(`
             id,
             user_id,
+            status,
             total_attempts,
             words_completed,
             total_time_seconds,
@@ -62,6 +74,7 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
             )
           `)
           .eq('bounty_id', bounty.id)
+          .eq('status', 'completed') // Only show participants who completed
           .order('words_completed', { ascending: false })
           .order('total_time_seconds', { ascending: true });
 
@@ -78,15 +91,17 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
           words_completed: p.words_completed,
           total_time_seconds: p.total_time_seconds,
           joined_at: p.joined_at,
+          status: p.status,
         }));
 
-        console.log('📊 Participants data from database:', participantsData);
-        console.log('📊 First participant detailed stats:', participantsData[0] ? {
-          total_attempts: participantsData[0].total_attempts,
-          words_completed: participantsData[0].words_completed,
-          total_time_seconds: participantsData[0].total_time_seconds
-        } : 'No participants');
+        console.log('📊 Completed participants:', participantsData);
         setParticipants(participantsData);
+
+        // Auto-select first participant if only one completed
+        if (participantsData.length === 1) {
+          setSelectedWinner(participantsData[0].wallet_address);
+          console.log('✓ Auto-selected single winner');
+        }
       } catch (err: any) {
         console.error('Error fetching participants:', err);
         setError(err.message || 'Failed to load participants');
@@ -98,6 +113,13 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
     fetchParticipants();
   }, [isOpen, bounty.id]);
 
+  // ============================================================================
+  // PHASE 4: NEW COMPLETION FLOW
+  // ============================================================================
+  // This integrates Phase 2 functions:
+  // 1. complete_bounty_with_winners() - Marks all winners automatically
+  // 2. mark_prize_paid() - Records blockchain payment details
+  // ============================================================================
   const handleComplete = async () => {
     if (!selectedWinner) {
       setError('Please select a winner');
@@ -114,6 +136,34 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
       setIsCompleting(true);
       setError(null);
 
+      // ========================================================================
+      // STEP 1: DETERMINE AND MARK WINNERS (Phase 2 Function)
+      // ========================================================================
+      setCompletionStep('Determining winners based on bounty criteria...');
+      console.log('🎯 Step 1: Calling complete_bounty_with_winners()');
+
+      const { data: winners, error: winnersError } = await supabase
+        .rpc('complete_bounty_with_winners', {
+          bounty_uuid: bounty.id
+        });
+
+      if (winnersError) {
+        console.error('❌ Error marking winners:', winnersError);
+        throw new Error(winnersError.message || 'Failed to mark winners');
+      }
+
+      console.log('✅ Winners marked successfully:', winners);
+      const winnersData = winners as Winner[];
+
+      if (!winnersData || winnersData.length === 0) {
+        throw new Error('No winners were determined. Check completion criteria.');
+      }
+
+      // ========================================================================
+      // STEP 2: BLOCKCHAIN PAYMENT FOR EACH WINNER
+      // ========================================================================
+      setCompletionStep('Preparing blockchain transactions...');
+
       // Initialize escrow service
       const signer = await getEthersSigner();
       await escrowService.initialize(signer);
@@ -121,79 +171,91 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
       // Get the solution (first word from bounty)
       const solution = bounty.words[0] || 'unknown';
 
-      // Show pending toast
-      const toastId = TransactionStatus.pending('Distributing prize to winner...');
+      // Process each winner (usually just 1 for winner-take-all, up to 3 for split-winners)
+      for (let i = 0; i < winnersData.length; i++) {
+        const winnerData = winnersData[i];
 
-      // Complete bounty on smart contract (hybrid model: no on-chain registration needed)
-      console.log('📤 Completing bounty on smart contract...');
-      const result = await escrowService.completeBounty({
-        bountyId: bounty.id,
-        winnerAddress: winner.wallet_address,
-        solution: solution,
-      });
+        // Find participant details for this winner
+        const winnerParticipant = participants.find(p => p.user_id === winnerData.winner_user_id);
+        if (!winnerParticipant) {
+          console.warn(`⚠️ Winner ${winnerData.winner_user_id} not found in participants list`);
+          continue;
+        }
 
-      if (!result.success) {
+        setCompletionStep(`Processing payment ${i + 1}/${winnersData.length} to ${winnerParticipant.display_name || winnerParticipant.username}...`);
+        console.log(`💰 Step 2.${i + 1}: Paying winner ${winnerData.winner_rank}:`, {
+          address: winnerParticipant.wallet_address,
+          amount: winnerData.prize_awarded
+        });
+
+        // Show pending toast
+        const toastId = TransactionStatus.pending(
+          `Sending ${winnerData.prize_awarded} HBAR to ${winnerParticipant.display_name || winnerParticipant.username}...`
+        );
+
+        // Execute blockchain transaction
+        const result = await escrowService.completeBounty({
+          bountyId: bounty.id,
+          winnerAddress: winnerParticipant.wallet_address,
+          solution: solution,
+        });
+
+        if (!result.success) {
+          TransactionStatus.dismiss(toastId);
+          throw new Error(result.error || `Payment failed for winner ${winnerData.winner_rank}`);
+        }
+
+        // Dismiss pending and show success
         TransactionStatus.dismiss(toastId);
-        throw new Error(result.error || 'Transaction failed');
+        TransactionStatus.success(
+          result.transactionHash || '',
+          `${winnerData.prize_awarded} HBAR sent to ${winnerParticipant.display_name || winnerParticipant.username}!`,
+          import.meta.env.VITE_HEDERA_NETWORK as 'testnet' | 'mainnet'
+        );
+
+        // ========================================================================
+        // STEP 3: RECORD PAYMENT DETAILS (Phase 2 Function)
+        // ========================================================================
+        setCompletionStep(`Recording payment ${i + 1}/${winnersData.length} details...`);
+        console.log(`📝 Step 3.${i + 1}: Recording payment for winner ${winnerData.winner_rank}`);
+
+        const { error: paymentError } = await supabase.rpc('mark_prize_paid', {
+          bounty_uuid: bounty.id,
+          user_uuid: winnerData.winner_user_id,
+          tx_hash: result.transactionHash || ''
+        });
+
+        if (paymentError) {
+          console.error('⚠️ Warning: Failed to record payment details:', paymentError);
+          // Don't throw - payment succeeded, just logging failed
+        } else {
+          console.log(`✅ Payment recorded for winner ${winnerData.winner_rank}`);
+        }
       }
 
-      // Dismiss pending and show success
-      TransactionStatus.dismiss(toastId);
-      TransactionStatus.success(
-        result.transactionHash || '',
-        `Prize distributed to ${winner.display_name || winner.username}!`,
-        import.meta.env.VITE_HEDERA_NETWORK as 'testnet' | 'mainnet'
-      );
-
-      // Update Supabase
-      // 1. Mark bounty as completed
-      const { error: bountyError } = await supabase
-        .from('bounties')
-        .update({
-          status: 'completed',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', bounty.id);
-
-      if (bountyError) throw bountyError;
-
-      // 2. Mark winner's participation
-      const { error: participationError } = await supabase
-        .from('bounty_participants')
-        .update({
-          is_winner: true,
-          status: 'completed',
-          prize_amount_won: bounty.prize_amount,
-          completed_at: new Date().toISOString(),
-        })
-        .eq('id', winner.id);
-
-      if (participationError) throw participationError;
-
-      // 3. Record payment transaction
-      const { error: txError } = await supabase.rpc('record_payment_transaction', {
-        bounty_uuid: bounty.id,
-        user_uuid: winner.user_id,
-        tx_type: 'prize_payment',
-        tx_amount: bounty.prize_amount,
-        tx_currency: 'HBAR',
-        tx_hash: result.transactionHash || '',
-      });
-
-      if (txError) throw txError;
-
-      // Refresh admin wallet balance after prize distribution
-      console.log('💰 Refreshing balance after prize distribution...');
+      // ========================================================================
+      // STEP 4: REFRESH ADMIN BALANCE
+      // ========================================================================
+      setCompletionStep('Refreshing balance...');
+      console.log('💰 Step 4: Refreshing admin balance');
       await refreshBalance();
 
+      // ========================================================================
+      // SUCCESS!
+      // ========================================================================
+      console.log('🎉 Bounty completion successful!');
       setSuccess(true);
+      setCompletionStep('Bounty completed successfully!');
+
       setTimeout(() => {
         onSuccess();
       }, 2000);
+
     } catch (err: any) {
-      console.error('Error completing bounty:', err);
+      console.error('❌ Error completing bounty:', err);
       const errorMessage = err.message || 'Failed to complete bounty';
       setError(errorMessage);
+      setCompletionStep('');
 
       // Show error toast
       TransactionStatus.error(errorMessage);
@@ -238,7 +300,24 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
                     Bounty Completed Successfully!
                   </p>
                   <p className="text-sm text-green-700 dark:text-green-300">
-                    Prize has been distributed to the winner
+                    Winners have been marked and prizes distributed
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Progress Indicator */}
+          {isCompleting && completionStep && (
+            <div className="mb-6 p-4 bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700 rounded-lg">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 animate-spin" />
+                <div>
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">
+                    Processing...
+                  </p>
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    {completionStep}
                   </p>
                 </div>
               </div>
@@ -260,21 +339,36 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
 
           {/* Bounty Info */}
           <div className="mb-6 p-4 bg-accent/50 rounded-lg">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-3 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground">Prize Amount</p>
                 <p className="font-semibold text-lg">{bounty.prize_amount} HBAR</p>
               </div>
               <div>
-                <p className="text-muted-foreground">Total Participants</p>
+                <p className="text-muted-foreground">Completed</p>
                 <p className="font-semibold text-lg">{participants.length}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Winner Criteria</p>
+                <p className="font-semibold text-lg capitalize">{bounty.winner_criteria}</p>
               </div>
             </div>
           </div>
 
+          {/* Info Box: Automatic Winner Detection */}
+          <div className="mb-6 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p className="text-sm text-blue-900 dark:text-blue-100">
+              <span className="font-semibold">ℹ️ Automatic Winner Selection:</span> The system will automatically determine the winner(s) based on the bounty's <span className="font-mono">{bounty.winner_criteria}</span> criteria.
+              {bounty.prize_distribution === 'split-winners' && ' Top 3 participants will split the prize.'}
+            </p>
+          </div>
+
           {/* Participants List */}
           <div className="mb-6">
-            <h3 className="font-semibold mb-3">Select Winner</h3>
+            <h3 className="font-semibold mb-3">Preview Top Participants</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Winner(s) will be automatically determined based on {bounty.winner_criteria} when you click Complete.
+            </p>
 
             {isLoadingParticipants ? (
               <div className="text-center py-8">
@@ -284,29 +378,33 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
             ) : participants.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No participants found</p>
+                <p>No participants have completed this bounty yet</p>
               </div>
             ) : (
               <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                {participants.map((participant) => (
-                  <button
+                {participants.slice(0, 5).map((participant, index) => (
+                  <div
                     key={participant.id}
-                    onClick={() => setSelectedWinner(participant.wallet_address)}
-                    disabled={isCompleting}
                     className={`
                       w-full text-left p-4 rounded-lg border-2 transition-all
-                      ${selectedWinner === participant.wallet_address
+                      ${index === 0
                         ? 'border-primary bg-primary/10'
-                        : 'border-border hover:border-primary/50 hover:bg-accent/50'
+                        : 'border-border bg-accent/30'
                       }
-                      ${isCompleting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                     `}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <p className="font-semibold">
-                          {participant.display_name || participant.username || 'Anonymous'}
-                        </p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-semibold">
+                            {participant.display_name || participant.username || 'Anonymous'}
+                          </p>
+                          {index === 0 && (
+                            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+                              Top Performer
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground font-mono mb-2">
                           {participant.wallet_address.slice(0, 10)}...{participant.wallet_address.slice(-8)}
                         </p>
@@ -322,12 +420,17 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
                           </span>
                         </div>
                       </div>
-                      {selectedWinner === participant.wallet_address && (
-                        <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />
+                      {index === 0 && (
+                        <Award className="h-5 w-5 text-primary flex-shrink-0" />
                       )}
                     </div>
-                  </button>
+                  </div>
                 ))}
+                {participants.length > 5 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">
+                    +{participants.length - 5} more participant(s)
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -344,13 +447,13 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
             </Button>
             <Button
               onClick={handleComplete}
-              disabled={!selectedWinner || isCompleting || success}
+              disabled={participants.length === 0 || isCompleting || success}
               className="flex-1"
             >
               {isCompleting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Completing...
+                  Processing...
                 </>
               ) : success ? (
                 <>
