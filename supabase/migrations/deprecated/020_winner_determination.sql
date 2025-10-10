@@ -364,7 +364,7 @@ BEGIN
 
         v_total_prize_distributed := v_total_prize_distributed + v_winner_record.prize_share;
 
-        -- Add to return result
+        -- Add to return result (assign to output columns)
         winner_user_id := v_winner_record.user_id;
         prize_awarded := v_winner_record.prize_share;
         winner_rank := v_winner_record.ranking;

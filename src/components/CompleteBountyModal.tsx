@@ -40,7 +40,7 @@ interface Winner {
 export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: CompleteBountyModalProps) {
   const { getEthersSigner, refreshBalance } = useWallet();
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
+  // REMOVED: selectedWinner state (no longer needed - automatic winner determination)
   const [isLoadingParticipants, setIsLoadingParticipants] = useState(true);
   const [isCompleting, setIsCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,11 +97,7 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
         console.log('📊 Completed participants:', participantsData);
         setParticipants(participantsData);
 
-        // Auto-select first participant if only one completed
-        if (participantsData.length === 1) {
-          setSelectedWinner(participantsData[0].wallet_address);
-          console.log('✓ Auto-selected single winner');
-        }
+        // REMOVED: Auto-select logic (no longer needed - automatic winner determination)
       } catch (err: any) {
         console.error('Error fetching participants:', err);
         setError(err.message || 'Failed to load participants');
@@ -121,16 +117,9 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
   // 2. mark_prize_paid() - Records blockchain payment details
   // ============================================================================
   const handleComplete = async () => {
-    if (!selectedWinner) {
-      setError('Please select a winner');
-      return;
-    }
-
-    const winner = participants.find(p => p.wallet_address === selectedWinner);
-    if (!winner) {
-      setError('Invalid winner selected');
-      return;
-    }
+    // REMOVED: Manual winner selection validation (now uses automatic determination)
+    // The complete_bounty_with_winners() function determines winners automatically
+    // based on bounty.winner_criteria (time, attempts, words-correct, first-to-solve)
 
     try {
       setIsCompleting(true);
@@ -219,6 +208,9 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
         setCompletionStep(`Recording payment ${i + 1}/${winnersData.length} details...`);
         console.log(`📝 Step 3.${i + 1}: Recording payment for winner ${winnerData.winner_rank}`);
 
+        // Add small delay to ensure blockchain has propagated
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         const { error: paymentError } = await supabase.rpc('mark_prize_paid', {
           bounty_uuid: bounty.id,
           user_uuid: winnerData.winner_user_id,
@@ -234,19 +226,30 @@ export function CompleteBountyModal({ isOpen, onClose, bounty, onSuccess }: Comp
       }
 
       // ========================================================================
-      // STEP 4: REFRESH ADMIN BALANCE
-      // ========================================================================
-      setCompletionStep('Refreshing balance...');
-      console.log('💰 Step 4: Refreshing admin balance');
-      await refreshBalance();
-
-      // ========================================================================
-      // SUCCESS!
+      // SUCCESS! Show immediately
       // ========================================================================
       console.log('🎉 Bounty completion successful!');
       setSuccess(true);
       setCompletionStep('Bounty completed successfully!');
 
+      // ========================================================================
+      // STEP 4: REFRESH ADMIN BALANCE (Non-blocking, in background)
+      // ========================================================================
+      // Refresh balance in background so UI is responsive
+      setTimeout(async () => {
+        try {
+          console.log('💰 Refreshing admin balance in background...');
+          // Add delay for blockchain finalization (Hedera needs ~2-3 seconds)
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          await refreshBalance();
+          console.log('✅ Balance refreshed successfully');
+        } catch (error) {
+          console.error('⚠️ Failed to refresh balance:', error);
+          // Don't throw - balance refresh is non-critical
+        }
+      }, 0);
+
+      // Close modal after showing success message
       setTimeout(() => {
         onSuccess();
       }, 2000);

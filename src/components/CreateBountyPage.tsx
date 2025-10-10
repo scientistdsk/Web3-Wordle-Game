@@ -13,7 +13,8 @@ import { SimpleTooltip } from './ui/SimpleTooltip';
 import { BountySuccessModal } from './BountySuccessModal';
 import { useWallet } from './WalletContext';
 import { validateWord } from '../utils/dictionary';
-import { createBounty, validateWordInDictionary, updateBountyTransactionInfo, getRandomWords } from '../utils/supabase/api';
+import { createBounty, validateWordInDictionary, updateBountyTransactionInfo, updateBounty, getRandomWords } from '../utils/supabase/api';
+import { supabase } from '../utils/supabase/client';
 import { EscrowService } from '../contracts/EscrowService';
 import { TransactionStatus } from './TransactionStatus';
 import { NotificationService } from '../utils/notifications/notification-service';
@@ -190,10 +191,38 @@ export function CreateBountyPage() {
       }
 
       const prizeAmount = parseFloat(form.prizeAmount) || 0;
+      const isFree = prizeAmount === 0;
 
-      // STEP 1: If prize > 0, process payment FIRST (before database)
+      // Create bounty data (common for both paid and free bounties)
+      const bountyData = {
+        creator_id: walletAddress,
+        name: form.name,
+        description: form.description,
+        bounty_type: form.type,
+        words: finalWords,
+        hints: form.hints.filter(h => h.trim()),
+        prize_amount: prizeAmount,
+        prize_distribution: form.prizeDistribution,
+        prize_currency: 'HBAR',
+        max_participants: form.maxParticipants ? parseInt(form.maxParticipants) : null,
+        max_attempts_per_user: form.maxAttempts ? parseInt(form.maxAttempts) : null,
+        time_limit_seconds: form.timeLimitSeconds ? parseInt(form.timeLimitSeconds) : null,
+        winner_criteria: form.winnerCriteria,
+        duration_hours: parseInt(form.duration),
+        status: isFree ? 'active' : 'draft', // Free bounties are active immediately, paid are draft
+        is_public: form.isPublic,
+        requires_registration: form.requiresRegistration
+      };
+
+      // STEP 1: Create bounty in database to get UUID (as draft if paid, active if free)
+      console.log('📝 Creating bounty in database as', isFree ? 'active' : 'draft', '...');
+      createdBountyData = await createBounty(bountyData);
+      const bountyUUID = createdBountyData.id;
+      console.log('✅ Bounty created in database with UUID:', bountyUUID);
+
+      // STEP 2: If prize > 0, process payment and activate
       if (prizeAmount > 0) {
-        console.log('💰 Processing payment first: Depositing', prizeAmount, 'HBAR to escrow contract...');
+        console.log('💰 Processing payment: Depositing', prizeAmount, 'HBAR to escrow contract...');
         setPaymentStatus('processing');
 
         // Get signer from connected wallet
@@ -213,32 +242,6 @@ export function CreateBountyPage() {
         // Initialize escrow service with the connected wallet's signer
         const escrowService = new EscrowService();
         await escrowService.initialize(signer);
-
-        // FIRST: Create bounty in database to get UUID
-        console.log('📝 Creating bounty in database first to get UUID...');
-        const bountyData = {
-          creator_id: walletAddress,
-          name: form.name,
-          description: form.description,
-          bounty_type: form.type,
-          words: finalWords,
-          hints: form.hints.filter(h => h.trim()),
-          prize_amount: parseFloat(form.prizeAmount) || 0,
-          prize_distribution: form.prizeDistribution,
-          prize_currency: 'HBAR',
-          max_participants: form.maxParticipants ? parseInt(form.maxParticipants) : null,
-          max_attempts_per_user: form.maxAttempts ? parseInt(form.maxAttempts) : null,
-          time_limit_seconds: form.timeLimitSeconds ? parseInt(form.timeLimitSeconds) : null,
-          winner_criteria: form.winnerCriteria,
-          duration_hours: parseInt(form.duration),
-          status: 'active',
-          is_public: form.isPublic,
-          requires_registration: form.requiresRegistration
-        };
-
-        createdBountyData = await createBounty(bountyData);
-        const bountyUUID = createdBountyData.id;
-        console.log('✅ Bounty created in database with UUID:', bountyUUID);
 
         // NOW: Use the UUID for the smart contract
         const solutionWord = finalWords[0];
@@ -264,12 +267,36 @@ export function CreateBountyPage() {
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Transaction timeout - please check your wallet')), 120000)
           )
-        ]);
+        ]) as any;
+
+        // Verify transaction was successful
+        if (!receipt || receipt.status === 0) {
+          throw new Error('Transaction failed on blockchain');
+        }
 
         transactionHash = receipt?.hash || tx.hash;
         contractAddress = await escrowService.getContract()?.getAddress() || '';
 
         console.log('✅ Transaction confirmed:', transactionHash);
+        console.log('✅ Transaction status:', receipt.status, '(1 = success)');
+
+        // Verify bounty was created on contract
+        const bountyInfo = await escrowService.getBountyInfo(bountyUUID);
+        if (!bountyInfo || Number(bountyInfo.prizeAmount) === 0) {
+          throw new Error('Bounty not found on blockchain after transaction');
+        }
+        console.log('✅ Bounty verified on blockchain:', {
+          prizeAmount: Number(bountyInfo.prizeAmount) / 1e18 + ' HBAR',
+          creator: bountyInfo.creator,
+          deadline: new Date(Number(bountyInfo.deadline) * 1000).toISOString(),
+          isActive: bountyInfo.isActive
+        });
+
+        // ACTIVATE BOUNTY: Update status from draft to active after successful payment
+        console.log('✅ Activating bounty after successful payment...');
+        await updateBounty(bountyUUID, { status: 'active' });
+        console.log('✅ Bounty activated successfully');
+
         setPaymentStatus('success');
 
         // Dismiss pending toast and show success
@@ -279,10 +306,6 @@ export function CreateBountyPage() {
           `Bounty created successfully! Prize: ${prizeAmount} HBAR`,
           import.meta.env.VITE_HEDERA_NETWORK as 'testnet' | 'mainnet'
         );
-
-        // Refresh wallet balance after transaction
-        console.log('💰 Refreshing balance after bounty creation...');
-        await refreshBalance();
       }
 
       // STEP 2: Update database with transaction info if payment was made
@@ -295,6 +318,19 @@ export function CreateBountyPage() {
           contractAddress
         );
         console.log('✅ Transaction info updated in database');
+      }
+
+      // STEP 3: Verify database state matches blockchain state
+      if (prizeAmount > 0) {
+        if (!transactionHash) {
+          console.error('❌ CRITICAL: Bounty created without transaction hash!');
+          throw new Error('Payment verification failed - no transaction hash recorded');
+        }
+        if (!contractAddress) {
+          console.error('❌ CRITICAL: Bounty created without contract address!');
+          throw new Error('Payment verification failed - no contract address recorded');
+        }
+        console.log('✅ Payment verification complete');
       }
 
       setPaymentStatus('success');
@@ -312,6 +348,24 @@ export function CreateBountyPage() {
         shareableLink: `${window.location.origin}?bounty=${createdBountyData.id}`
       });
       setShowSuccessModal(true);
+
+      // Refresh balance in background (non-blocking)
+      // Note: This happens after modal is shown so UI is responsive
+      if (prizeAmount > 0) {
+        console.log('💰 Refreshing balance in background...');
+        // Use setTimeout to make this truly non-blocking
+        setTimeout(async () => {
+          try {
+            // Add delay for blockchain finalization (Hedera needs ~2-3 seconds)
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            await refreshBalance();
+            console.log('✅ Balance refreshed successfully');
+          } catch (error) {
+            console.error('⚠️ Failed to refresh balance:', error);
+            // Don't throw - balance refresh is non-critical
+          }
+        }, 0);
+      }
 
       // Reset form
       setForm({
@@ -335,6 +389,22 @@ export function CreateBountyPage() {
     } catch (error) {
       console.error('❌ Error creating bounty:', error);
       setPaymentStatus('error');
+
+      // CLEANUP: Delete draft bounty if payment failed
+      if (createdBountyData && !transactionHash) {
+        console.log('🧹 Cleaning up draft bounty after payment failure...');
+        try {
+          await supabase
+            .from('bounties')
+            .delete()
+            .eq('id', createdBountyData.id)
+            .eq('status', 'draft'); // Only delete if still in draft status
+          console.log('✅ Draft bounty cleaned up successfully');
+        } catch (cleanupError) {
+          console.error('⚠️ Failed to cleanup draft bounty:', cleanupError);
+          // Don't throw - we still want to show the original error
+        }
+      }
 
       // Determine which stage failed
       let errorMessage = 'Failed to create bounty';
