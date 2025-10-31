@@ -420,7 +420,11 @@ export function ProfilePage({ onCreateBounty }: ProfilePageProps) {
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 text-destructive">
                   <XCircle className="h-4 w-4" />
-                  <span className="text-sm">{refundError}</span>
+                  <span className="text-sm">
+                    {typeof refundError === 'string'
+                      ? refundError
+                      : refundError?.message || 'Failed to process refund'}
+                  </span>
                 </div>
               </CardContent>
             </Card>

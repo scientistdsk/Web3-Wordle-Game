@@ -38,7 +38,7 @@ describe('Gameplay Integration', () => {
       bounty_id: testBounty.id,
       user_id: testUser.id,
       status: 'active',
-      attempts_used: 0,
+      total_attempts: 0,
     });
   });
 
@@ -142,6 +142,9 @@ describe('Gameplay Integration', () => {
     it('prevents exceeding max attempts limit', async () => {
       const maxAttempts = testBounty.max_attempts || 6;
 
+      // Insert testParticipation for this test
+      await mockSupabase.from('bounty_participants').insert(testParticipation);
+
       for (let i = 0; i < maxAttempts; i++) {
         await mockSupabase.from('game_attempts').insert({
           participant_id: testParticipation.id,
@@ -157,7 +160,7 @@ describe('Gameplay Integration', () => {
       // Update participation attempts count
       await mockSupabase
         .from('bounty_participants')
-        .update({ attempts_used: maxAttempts })
+        .update({ total_attempts: maxAttempts })
         .eq('id', testParticipation.id);
 
       const { data: participation } = await mockSupabase
@@ -166,10 +169,10 @@ describe('Gameplay Integration', () => {
         .eq('id', testParticipation.id)
         .single();
 
-      expect(participation.attempts_used).toBe(maxAttempts);
+      expect(participation.total_attempts).toBe(maxAttempts);
 
       // Next attempt should be rejected
-      const canAttempt = participation.attempts_used < maxAttempts;
+      const canAttempt = participation.total_attempts < maxAttempts;
       expect(canAttempt).toBe(false);
     });
 
@@ -203,7 +206,7 @@ describe('Gameplay Integration', () => {
           expected: [
             { letter: 'S', status: 'present' },
             { letter: 'T', status: 'present' },
-            { letter: 'E', status: 'correct' },
+            { letter: 'E', status: 'present' }, // E is at wrong position (pos 2 vs pos 1 in target)
             { letter: 'T', status: 'correct' },
             { letter: 'S', status: 'correct' },
           ],
@@ -219,6 +222,9 @@ describe('Gameplay Integration', () => {
 
   describe('Win Conditions', () => {
     it('correctly determines winner when word is guessed', async () => {
+      // Insert testParticipation for this test
+      await mockSupabase.from('bounty_participants').insert(testParticipation);
+
       // Make attempts
       await mockSupabase.from('game_attempts').insert({
         participant_id: testParticipation.id,
@@ -255,6 +261,9 @@ describe('Gameplay Integration', () => {
     it('handles loss when max attempts reached without success', async () => {
       const maxAttempts = 6;
 
+      // Insert testParticipation for this test
+      await mockSupabase.from('bounty_participants').insert(testParticipation);
+
       // Make 6 failed attempts
       for (let i = 0; i < maxAttempts; i++) {
         await mockSupabase.from('game_attempts').insert({
@@ -273,7 +282,7 @@ describe('Gameplay Integration', () => {
         .from('bounty_participants')
         .update({
           status: 'failed',
-          attempts_used: maxAttempts,
+          total_attempts: maxAttempts,
           completed_at: new Date().toISOString(),
         })
         .eq('id', testParticipation.id);
@@ -286,14 +295,14 @@ describe('Gameplay Integration', () => {
 
       expect(participant.status).toBe('failed');
       expect(participant.is_winner).toBe(false);
-      expect(participant.attempts_used).toBe(maxAttempts);
+      expect(participant.total_attempts).toBe(maxAttempts);
     });
 
     it('determines winner by fewest attempts when multiple players solve', async () => {
       const player1 = createMockParticipant({
         bounty_id: testBounty.id,
         user_id: createMockUser().id,
-        attempts_used: 3,
+        total_attempts: 3,
         words_completed: 1,
         is_winner: false,
       });
@@ -301,7 +310,7 @@ describe('Gameplay Integration', () => {
       const player2 = createMockParticipant({
         bounty_id: testBounty.id,
         user_id: createMockUser().id,
-        attempts_used: 2,
+        total_attempts: 2,
         words_completed: 1,
         is_winner: false,
       });
@@ -309,7 +318,7 @@ describe('Gameplay Integration', () => {
       const player3 = createMockParticipant({
         bounty_id: testBounty.id,
         user_id: createMockUser().id,
-        attempts_used: 5,
+        total_attempts: 5,
         words_completed: 1,
         is_winner: false,
       });
@@ -318,36 +327,36 @@ describe('Gameplay Integration', () => {
 
       // Find winner (fewest attempts)
       const winner = participants.reduce((prev, current) =>
-        current.attempts_used < prev.attempts_used ? current : prev
+        current.total_attempts < prev.total_attempts ? current : prev
       );
 
       expect(winner).toBe(player2);
-      expect(winner.attempts_used).toBe(2);
+      expect(winner.total_attempts).toBe(2);
     });
 
     it('determines winner by fastest time when attempts are equal', async () => {
       const player1 = createMockParticipant({
         bounty_id: testBounty.id,
-        attempts_used: 3,
+        total_attempts: 3,
         total_time_seconds: 45,
       });
 
       const player2 = createMockParticipant({
         bounty_id: testBounty.id,
-        attempts_used: 3,
+        total_attempts: 3,
         total_time_seconds: 30,
       });
 
       const player3 = createMockParticipant({
         bounty_id: testBounty.id,
-        attempts_used: 3,
+        total_attempts: 3,
         total_time_seconds: 60,
       });
 
       const participants = [player1, player2, player3];
 
       // Find winner (fastest time when attempts equal)
-      const sameAttempts = participants.filter((p) => p.attempts_used === 3);
+      const sameAttempts = participants.filter((p) => p.total_attempts === 3);
       const winner = sameAttempts.reduce((prev, current) =>
         current.total_time_seconds < prev.total_time_seconds ? current : prev
       );
@@ -445,6 +454,9 @@ describe('Gameplay Integration', () => {
     it('tracks time taken for each attempt', async () => {
       const timings = [5, 3, 7, 4]; // seconds
 
+      // Insert testParticipation for this test
+      await mockSupabase.from('bounty_participants').insert(testParticipation);
+
       for (let i = 0; i < timings.length; i++) {
         await mockSupabase.from('game_attempts').insert({
           participant_id: testParticipation.id,
@@ -477,6 +489,9 @@ describe('Gameplay Integration', () => {
         bounty_id: timedBounty.id,
         total_time_seconds: 0,
       });
+
+      // Insert participation for this test
+      await mockSupabase.from('bounty_participants').insert(participation);
 
       // Simulate taking 70 seconds (over limit)
       const timeTaken = 70;
@@ -516,6 +531,9 @@ describe('Gameplay Integration', () => {
         current_word_index: 0,
         words_completed: 0,
       });
+
+      // Insert participation for this test
+      await mockSupabase.from('bounty_participants').insert(participation);
 
       // Complete first word
       await mockSupabase.from('game_attempts').insert({

@@ -53,9 +53,62 @@
     build: {
       target: 'esnext',
       outDir: 'build',
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // React core
+            'vendor-react': ['react', 'react-dom'],
+            // Radix UI components
+            'vendor-radix': [
+              '@radix-ui/react-accordion',
+              '@radix-ui/react-alert-dialog',
+              '@radix-ui/react-avatar',
+              '@radix-ui/react-checkbox',
+              '@radix-ui/react-dialog',
+              '@radix-ui/react-dropdown-menu',
+              '@radix-ui/react-label',
+              '@radix-ui/react-popover',
+              '@radix-ui/react-select',
+              '@radix-ui/react-separator',
+              '@radix-ui/react-slot',
+              '@radix-ui/react-switch',
+              '@radix-ui/react-tabs',
+              '@radix-ui/react-tooltip',
+            ],
+            // Wallet & blockchain
+            'vendor-blockchain': [
+              'ethers',
+              '@reown/appkit',
+              '@reown/appkit-adapter-ethers',
+              '@reown/appkit-core',
+              '@hashgraph/hedera-wallet-connect',
+            ],
+            // UI utilities
+            'vendor-ui': [
+              'lucide-react',
+              'class-variance-authority',
+              'clsx',
+              'tailwind-merge',
+            ],
+            // Database
+            'vendor-db': ['@supabase/supabase-js', '@jsr/supabase__supabase-js'],
+            // Other utilities
+            'vendor-utils': [
+              'sonner',
+              'canvas-confetti',
+              'react-hook-form',
+              'recharts',
+            ],
+          },
+        },
+      },
     },
     server: {
       port: 3000,
       open: true,
+      watch: {
+        usePolling: true,
+      },
     },
   });
