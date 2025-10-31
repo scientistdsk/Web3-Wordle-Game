@@ -49,7 +49,7 @@ export const createMockParticipant = (
   bounty_id: crypto.randomUUID(),
   user_id: crypto.randomUUID(),
   status: 'active',
-  attempts_used: 0,
+  total_attempts: 0,
   is_winner: false,
   joined_at: new Date().toISOString(),
   completed_at: null,

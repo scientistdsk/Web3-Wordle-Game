@@ -115,13 +115,33 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
   const getLetterState = (letter: string, position: number, word: string): LetterState => {
     if (!word) return 'empty';
 
-    if (currentWord[position] === letter) {
-      return 'correct';
-    } else if (currentWord.includes(letter)) {
-      return 'present';
-    } else {
-      return 'absent';
+    // Two-pass algorithm to handle duplicate letters correctly
+    const targetLetters = currentWord.split('');
+    const guessLetters = word.split('');
+    const results: (LetterState | null)[] = Array(word.length).fill(null);
+
+    // First pass: mark correct positions
+    for (let i = 0; i < guessLetters.length; i++) {
+      if (guessLetters[i] === targetLetters[i]) {
+        results[i] = 'correct';
+        targetLetters[i] = ''; // Mark as used
+      }
     }
+
+    // Second pass: mark present/absent
+    for (let i = 0; i < guessLetters.length; i++) {
+      if (results[i]) continue; // Already marked as correct
+
+      const letterIndex = targetLetters.indexOf(guessLetters[i]);
+      if (letterIndex !== -1) {
+        results[i] = 'present';
+        targetLetters[letterIndex] = ''; // Mark as used
+      } else {
+        results[i] = 'absent';
+      }
+    }
+
+    return results[position] || 'empty';
   };
 
   const handleSubmitGuess = async () => {
@@ -292,7 +312,9 @@ export function GameplayPage({ bountyId, onBackToBountyHunt }: GameplayPageProps
           <CardContent className="p-6 text-center">
             <h3 className="text-lg font-semibold text-red-600 mb-2">Error Loading Bounty</h3>
             <p className="text-muted-foreground mb-4">
-              {bountyError || 'Bounty not found or you do not have access to it.'}
+              {typeof bountyError === 'string'
+                ? bountyError
+                : bountyError?.message || 'Bounty not found or you do not have access to it.'}
             </p>
             <Button onClick={onBackToBountyHunt} variant="outline">
               <ArrowLeft className="h-4 w-4 mr-2" />

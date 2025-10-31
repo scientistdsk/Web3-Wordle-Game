@@ -191,7 +191,9 @@ export function PrizeClaimModal({
             <Alert className="bg-red-50 border-red-200">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription className="text-red-800">
-                {claimError || 'Failed to claim prize. Please try again or contact support.'}
+                {typeof claimError === 'string'
+                  ? claimError
+                  : claimError?.message || 'Failed to claim prize. Please try again or contact support.'}
               </AlertDescription>
             </Alert>
           )}
