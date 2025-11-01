@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { generateMockAddress, hbarToWei } from './test-helpers';
-
+ 
 /**
  * Mock Wallet for Testing
  * Simulates window.ethereum and wallet interactions
